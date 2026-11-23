@@ -1,4 +1,4 @@
-"""Own the two browser receivers; never attach to another application's local services."""
+"""Own the browser receivers (two, or three with RX3); never attach to another application's local services."""
 import atexit
 import json
 import os
@@ -18,13 +18,18 @@ _workers = {}
 _closing = False
 
 
-def _band(tuner):
-    """(profile, LO MHz, correction MHz) for this tuner from config.json (the Setup page)."""
+def _config():
+    """config.json (the Setup page), or {}."""
     try:
         cfg = json.loads((paths.DATA / 'config.json').read_text())
-        cfg = cfg if isinstance(cfg, dict) else {}
+        return cfg if isinstance(cfg, dict) else {}
     except (OSError, ValueError):
-        cfg = {}
+        return {}
+
+
+def _band(tuner):
+    """(profile, LO MHz, correction MHz) for this tuner from config.json (the Setup page)."""
+    cfg = _config()
     profile = profiles.get_profile(cfg)
     offset = profiles.get_offsets(cfg)[profile][profiles.kind_of(tuner)]
     return profile, offset['lo'], offset['corr']
@@ -36,23 +41,35 @@ def _port(kind=socket.SOCK_STREAM):
         return sock.getsockname()[1]
 
 
+def _label(number, slot, wanted):
+    if slot:
+        return slot['label']
+    if wanted == 'none':
+        return 'Not used (Setup page)'
+    if wanted != 'auto':
+        return wanted.split(':')[0] + ' not found (pinned on the Setup page)'
+    return 'No receiver connected'
+
+
 def status():
-    slots = tuner_assignment.slots()
+    cfg = _config()
+    assigned, wanted = tuner_assignment.assigned(cfg), tuner_assignment.assignment(cfg)
     with _lock:
         for entry in _workers.values():
             if entry['state'] == 'running' and entry['proc'].poll() is not None:
                 entry.update(state='error', error='Receiver stopped unexpectedly; click a spectrum signal to restart')
-        return [dict(number=n, label=slots[n-1]['label'] if len(slots) >= n else 'No receiver connected',
-                     connected=len(slots) >= n, available=len(slots) >= n and _workers.get(n, {}).get('state') != 'unavailable', state=_workers.get(n, {}).get('state', 'stopped'),
-                     error=_workers.get(n, {}).get('error', ''),
-                     url=_workers.get(n, {}).get('url')) for n in (1, 2)]
+        return [dict(number=n, label=_label(n, assigned[n], wanted[n]), connected=assigned[n] is not None,
+                     available=assigned[n] is not None and _workers.get(n, {}).get('state') != 'unavailable',
+                     state=_workers.get(n, {}).get('state', 'stopped'), error=_workers.get(n, {}).get('error', ''),
+                     url=_workers.get(n, {}).get('url')) for n in tuner_assignment.enabled(cfg)]
 
 
 def start(number):
     """Launch asynchronously; the page polls readiness without holding up transmission requests."""
     global _closing
-    if number not in (1, 2):
-        raise ValueError('Receiver must be 1 or 2')
+    cfg = _config()
+    if number not in tuner_assignment.enabled(cfg):
+        raise ValueError('Receiver must be one of %s' % ', '.join(map(str, tuner_assignment.enabled(cfg))))
     with _lock:
         if _closing:
             raise ValueError('C3CAST is closing')
@@ -60,19 +77,25 @@ def start(number):
         if entry and entry['state'] in ('starting', 'running'):
             if entry['state'] == 'starting' or entry.get('proc') and entry['proc'].poll() is None:
                 return
-        slot = tuner_assignment.slot_for(number)
+        assigned = tuner_assignment.assigned(cfg)
+        slot = assigned.get(number)
         if not slot:
             raise ValueError('No receiver connected')
-        # Pico channel 2 belongs to the first receiver's hardware service.
-        first = tuner_assignment.slot_for(1)
-        shared = number == 2 and slot['tuner'] == 'picotuner' and slot['channel'] == 2 and first['tuner'] == 'picotuner'
-        if shared:
-            start(1)
+        # Pico channel 2 belongs to the hardware service of the receiver that has channel 1.
+        primary = None
+        if slot['tuner'] == 'picotuner' and slot['channel'] == 2:
+            primary = next((n for n, other in assigned.items() if other and other['tuner'] == 'picotuner' and other['channel'] == 1
+                            and n in tuner_assignment.enabled(cfg)), None)
+            if primary is None:
+                raise ValueError('PicoTuner channel 2 needs channel 1 on another receiver')
+            start(primary)
         entry = dict(state='starting', error='', port=_port(), service_port=_port(), ts_port=_port(socket.SOCK_DGRAM), ts_port2=_port(socket.SOCK_DGRAM))
+        shared = primary is not None
         if shared:
-            entry['service_port'] = _workers[1]['service_port']
-            entry['ts_port'] = _workers[1]['ts_port2']
-            entry['primary_port'] = _workers[1]['port']
+            entry['primary'] = primary
+            entry['service_port'] = _workers[primary]['service_port']
+            entry['ts_port'] = _workers[primary]['ts_port2']
+            entry['primary_port'] = _workers[primary]['port']
         entry['url'] = f"http://127.0.0.1:{entry['port']}"
         _workers[number] = entry
         threading.Thread(target=_launch, args=(number, slot, entry, shared), daemon=True).start()
@@ -84,7 +107,7 @@ def _launch(number, slot, entry, shared):
             tuner_access.check(slot)
         else:
             deadline = time.monotonic() + 25
-            primary = _workers[1]
+            primary = _workers[entry.get('primary', 1)]
             while primary['state'] == 'starting' and time.monotonic() < deadline and not _closing:
                 time.sleep(.1)
             if primary['state'] == 'unavailable':

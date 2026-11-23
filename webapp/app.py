@@ -28,6 +28,7 @@ import clap_test  # noqa: E402
 import flasher  # noqa: E402
 import version  # noqa: E402
 import receivers  # noqa: E402
+import tuner_assignment  # noqa: E402
 from window_session import WindowLease
 from cpu_load import CpuLoad
 
@@ -393,7 +394,7 @@ def api_bye():
 
 @app.get("/")
 def index():
-    return render_template("index.html", rates=SYMBOL_RATES, fecs=FECS, freq=get_freq(), profile=get_band_profile(),
+    return render_template("index.html", rates=SYMBOL_RATES, fecs=FECS, freq=get_freq(), profile=get_band_profile(), rx_numbers=tuner_assignment.enabled(load_config()),
                            lmin=level_limits()[0], lmax=level_limits()[1], ldef=level_limits()[0], level_min=level_limits()[0], max_seconds=MAX_SECONDS,
                            setup_ready=setup_ready())
 
@@ -704,6 +705,60 @@ player = {"proc": None}
 @app.get('/api/receivers')
 def api_receivers():
     return jsonify(receivers=receivers.status())
+
+
+ASSIGN_KEY = re.compile(r"(minitiouner:[A-Za-z0-9]{0,16}|picotuner:[12]|rtlsdr|hackrf)")
+
+
+def receiver_setup():
+    """Detected tuners (key and label) and the saved assignment, for the Setup page."""
+    found = tuner_assignment.slots()
+    return {"detected": [{"key": tuner_assignment.key(slot), "label": slot["label"]} for slot in found],
+            "assign": {str(n): value for n, value in tuner_assignment.assignment(load_config()).items()}}
+
+
+def tx_busy():
+    with lock:
+        return tx["proc"] is not None or tx["state"] in ("starting", "stopping")
+
+
+@app.get('/api/receivers/setup')
+def api_receivers_setup():
+    return jsonify(receiver_setup())
+
+
+@app.post('/api/receivers/assign')
+def api_receivers_assign():
+    """Setup page: RX1..RX3 each "auto", "none" or a pinned tuner key. The receivers restart with the new assignment."""
+    wanted = (request.get_json(silent=True) or {}).get("assign")
+    if not isinstance(wanted, dict):
+        return jsonify(error="expected an assignment"), 400
+    clean = {}
+    for number in tuner_assignment.RECEIVERS:
+        value = wanted.get(str(number), tuner_assignment.DEFAULT_ASSIGN[number])
+        if not isinstance(value, str) or not (value in ("auto", "none") or ASSIGN_KEY.fullmatch(value)):
+            return jsonify(error=f"receiver {number}: unknown choice"), 400
+        clean[str(number)] = value
+    pinned = [v for v in clean.values() if v not in ("auto", "none")]
+    if len(pinned) != len(set(pinned)):
+        return jsonify(error="one tuner cannot be pinned to two receivers"), 400
+    if tx_busy():
+        return jsonify(error="stop the transmission first"), 409
+    changed = tuner_assignment.assignment(load_config()) != tuner_assignment.assignment({"rx_assign": clean})
+    write_config(rx_assign=clean)
+    if changed:
+        receivers.restart()
+    return jsonify(ok=True, restarted=changed, **receiver_setup())
+
+
+@app.post('/api/receivers/rescan')
+def api_receivers_rescan():
+    """Setup page: release every receiver, then list the USB tuners again (a tuner a receiver holds is not listed)."""
+    if tx_busy():
+        return jsonify(error="stop the transmission first"), 409
+    receivers.restart()
+    tuner_assignment.reset()
+    return jsonify(ok=True, **receiver_setup())
 
 
 @app.post('/api/receivers/<int:number>/start')

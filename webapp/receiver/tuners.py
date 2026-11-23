@@ -4,6 +4,7 @@ A backend opens a session for one tuning and returns a source with read1(size) (
 stream ends. The server hands the source to FFmpeg. Standard library only.
 
   RtlSdrBackend   rtl_iq -> datvrx (software demodulator), status from datvrx's text lines
+  HackRfBackend   hackrf_iq -> datvrx --format cs8 (software demodulator), tuned beside the DC spike
   ReplayBackend   a recorded transport stream (development)
   QocastBackend   MiniTiouner / PicoTuner through the bundled tuner service (tuner-service\):
                   tuning and status over its local HTTP API, the transport stream over loopback UDP
@@ -182,6 +183,74 @@ class RtlSdrBackend:
         if self.bias_applied:
             self.bias_tee = False
             self.apply_bias_tee()
+
+
+class HackRfBackend:
+    """HackRF One: hackrf_iq (C3CAST-plus, binary-safe) -> datvrx --format cs8.
+
+    A HackRF is a zero-IF receiver with a DC spike at its centre frequency. It is therefore tuned 0.75 x the symbol
+    rate above the carrier, so the whole DVB-S2 signal lies beside the spike, and datvrx is told where the carrier is
+    (--carrier). The sample rate is 5 x the symbol rate, at least 2 Msps (the HackRF and datvrx minimum)."""
+    id = 'hackrf'
+    reconnect = False
+    max_symbol_rate = 1500
+    LNA_STEPS = tuple(range(0, 41, 8))          # dB, the MAX2837's IF / LNA steps
+    VGA_STEPS = tuple(range(0, 63, 2))          # dB, baseband gain
+    MIN_IF_MHZ, MAX_IF_MHZ = 1.0, 6000.0
+    FILES = ('hackrf_iq.exe', 'datvrx.exe', 'libusb-1.0.dll', 'libwinpthread-1.dll')
+
+    def __init__(self, bin_dir, lnb_lo, lnb_correction, lna=32, vga=30, amp=False, antenna=False):
+        self.bin_dir, self.lnb_lo, self.lnb_correction = bin_dir, lnb_lo, lnb_correction
+        self.lna, self.vga = self.snap(lna, self.LNA_STEPS), self.snap(vga, self.VGA_STEPS)
+        self.amp, self.antenna = bool(amp), bool(antenna)
+
+    @staticmethod
+    def snap(value, steps):
+        return min(steps, key=lambda step: abs(step - value))
+
+    @staticmethod
+    def plan(symbol_rate):
+        """(sample rate in samples/s, tuning offset above the carrier in Hz) for a symbol rate in kS/s."""
+        return max(2000000, symbol_rate * 5000), round(symbol_rate * 750)
+
+    def check(self, downlink_mhz, symbol_rate):
+        if not 25 <= symbol_rate <= self.max_symbol_rate:
+            raise ValueError('Symbol rate must be 25–%d kS/s' % self.max_symbol_rate)
+        if_mhz = downlink_mhz - self.lnb_lo + self.lnb_correction
+        if not self.MIN_IF_MHZ <= if_mhz <= self.MAX_IF_MHZ:
+            raise ValueError('%.3f MHz is outside the HackRF range %g–%g MHz: check the LO on the Setup page (%g MHz now)'
+                             % (if_mhz, self.MIN_IF_MHZ, self.MAX_IF_MHZ, self.lnb_lo))
+        return if_mhz
+
+    def command(self, if_mhz, symbol_rate):
+        """The two programs of a session: the reader and the demodulator."""
+        rate, offset = self.plan(symbol_rate)
+        reader = [str(self.bin_dir / 'hackrf_iq.exe'), str(round(if_mhz * 1e6) + offset), str(rate), str(self.lna),
+                  str(self.vga), '1' if self.amp else '0', '1' if self.antenna else '0', '--watch-stdin']
+        demodulator = [str(self.bin_dir / 'datvrx.exe'), '-', '--rate', '%g' % (rate / 1e6), '--format', 'cs8',
+                       '--rs', str(symbol_rate / 1000), '--carrier', '%g' % (-offset / 1000), '--std', '0',
+                       '--roll', '0.25', '--no-realtime', '--cells', '1024']
+        return reader, demodulator
+
+    def open(self, ctx, downlink_mhz, symbol_rate):
+        if_mhz = self.check(downlink_mhz, symbol_rate)
+        for name in self.FILES:
+            if not (self.bin_dir / name).is_file():
+                raise ValueError('The HackRF runtime is incomplete: missing ' + name)
+        reader, demodulator = self.command(if_mhz, symbol_rate)
+        # 'radio': closing its input stops it cleanly (stop RX, antenna power off, close the HackRF)
+        source = ctx.start(reader, 'radio', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        transport = ctx.start(demodulator, 'receiver', stdin=source.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        source.stdout.close()
+        ctx.pumps.append(threading.Thread(target=pump, args=(transport.stderr, ctx.files[-1], ctx.status), daemon=True))
+        ctx.pumps[-1].start()
+        print('Tuned: HackRF %.6f MHz (carrier %.6f MHz), %d kS/s, LNA %d, VGA %d, amp %s, antenna power %s'
+              % (if_mhz + self.plan(symbol_rate)[1] / 1e6, if_mhz, symbol_rate, self.lna, self.vga,
+                 'on' if self.amp else 'off', 'on' if self.antenna else 'off'), flush=True)
+        return ProcessSource(transport)
+
+    def shutdown(self):
+        pass                                     # hackrf_iq switches the antenna power off itself when it stops
 
 
 class ReplayBackend:

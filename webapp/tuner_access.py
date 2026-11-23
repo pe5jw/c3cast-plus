@@ -117,6 +117,8 @@ def check(slot):
             return _mini(slot.get('serial'))
         if slot['tuner'] == 'rtlsdr':
             return _usb({(0x0bda, 0x2838), (0x0bda, 0x2832)}, first_only=True)
+        if slot['tuner'] == 'hackrf':
+            return _usb({(0x1d50, 0x6089)}, first_only=True)
         if slot['tuner'] == 'picotuner':
             return _usb({tuple(pair) for pair in slot.get('usb_ids', [])})
     except (OSError, AttributeError):

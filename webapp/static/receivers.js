@@ -126,6 +126,13 @@
     tune(panel, signal);
     return true; // Tune once per TX session; preserve the selected pill and RX2.
   };
+  window.c3TuneReceiverNumber = (number, signal) => {     // 2.4 GHz direct: a button per receiver
+    const panel = panels.find(p => Number(p.dataset.receiver) === number);
+    if (!panel) return;
+    if (panel.classList.contains('d-none')) hideRx2(false);
+    selectReceiver(number);
+    tune(panel, signal);
+  };
   window.c3TuneReceiver = signal => {
     const number = activeReceiver;
     const panel = panels[number - 1];

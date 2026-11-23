@@ -66,7 +66,7 @@
           <thead><tr style="text-align:left"><th style="padding:.2rem .4rem">Profile</th><th style="padding:.2rem .4rem">Receiver</th>
             <th style="padding:.2rem .4rem">LO</th><th style="padding:.2rem .4rem">Correction</th></tr></thead>
           <tbody>
-          {% for profile, plabel in [('qo100', 'QO-100'), ('2400', '2.4 GHz direct')] %}{% for kind, klabel in [('rtlsdr', 'RTL-SDR'), ('nim', 'MiniTiouner / PicoTuner')] %}
+          {% for profile, plabel in [('qo100', 'QO-100'), ('2400', '2.4 GHz direct')] %}{% for kind, klabel in [('rtlsdr', 'RTL-SDR'), ('nim', 'MiniTiouner / PicoTuner'), ('hackrf', 'HackRF One')] %}
             <tr data-profile="{{ profile }}">
               <td style="padding:.2rem .4rem">{{ plabel if loop.first else '' }}</td>
               <td style="padding:.2rem .4rem">{{ klabel }}</td>
@@ -79,13 +79,39 @@
         <div class="note" style="margin-top:.4rem">
           LO examples: <b>9750</b> standard LNB · <b>9739</b> or another value for a modified / PLL LNB ·
           <b>1500</b> Nooelec Ham It Down (2.4 GHz → about 900 MHz for an RTL-SDR) · <b>0</b> no converter
-          (MiniTiouner direct on 2.4 GHz; the LNB supply then stays off).
+          (MiniTiouner or HackRF direct on 2.4 GHz; the MiniTiouner's LNB supply then stays off).
           Correction: the converter's error, e.g. 0.05 if it runs 50 kHz high.
         </div>
       </div>
       <div class="field">
         <button id="saveBand" class="btn save-primary" type="button"><svg class="i"><use href="#i-save"/></svg>Save band settings</button>
         <div id="bandMsg" class="note" role="status" style="margin-top:.5rem"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" style="margin-top:.6rem">
+    <div class="ph"><svg class="i"><use href="#i-plug"/></svg>Receivers</div>
+    <div class="pb">
+      <div class="field">
+        <table class="note" style="width:100%;border-collapse:collapse;color:var(--text)">
+          <tbody>
+          {% for n in (1, 2, 3) %}
+            <tr><td style="padding:.25rem .4rem;width:7rem"><label for="rx{{ n }}">Receiver {{ n }}</label></td>
+              <td style="padding:.25rem .4rem"><select id="rx{{ n }}" class="inp rx-assign" data-rx="{{ n }}" style="width:auto;min-width:16rem"></select></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <div class="note" style="margin-top:.4rem">
+          <b>Automatic</b>: the next detected tuner that no receiver is pinned to (MiniTiouner, PicoTuner, RTL-SDR, then HackRF).
+          A <b>pinned</b> tuner always goes to that receiver. Receiver 3 appears on the main page once it is not "Not used".
+          A tuner that another program holds is not listed: close that program, then press Rescan. One RTL-SDR and one HackRF are supported.
+        </div>
+      </div>
+      <div class="row">
+        <button id="saveRx" class="btn save-primary" type="button"><svg class="i"><use href="#i-save"/></svg>Save receivers</button>
+        <button id="rescan" class="btn" type="button"><svg class="i"><use href="#i-refresh"/></svg>Rescan USB</button>
+        <span id="rxMsg" class="note" role="status"></span>
       </div>
     </div>
   </section>
@@ -155,6 +181,34 @@ $('save').onclick = async () => {
   $('toast').textContent = 'Settings saved';
   setTimeout(() => { location.href = '/'; }, 1200);           // back to the transmitter by itself
 };
+function showReceivers(r) {
+  const known = new Map(r.detected.map(d => [d.key, d.label]));
+  document.querySelectorAll('.rx-assign').forEach(select => {
+    const saved = r.assign[select.dataset.rx];
+    const options = [['auto', 'Automatic'], ['none', 'Not used'], ...[...known].map(([key, label]) => [key, label])];
+    if (!['auto', 'none'].includes(saved) && !known.has(saved)) options.push([saved, saved + ' (not plugged in)']);
+    select.replaceChildren(...options.map(([value, text]) => new Option(text, value)));
+    select.value = saved;
+  });
+  $('rxMsg').textContent = r.detected.length ? `found: ${r.detected.map(d => d.label).join(', ')}` : 'no tuners found';
+}
+async function loadReceivers() { showReceivers(await (await fetch('/api/receivers/setup')).json()); }
+$('rescan').onclick = async () => {
+  $('rxMsg').textContent = 'releasing the receivers and scanning…';
+  const r = await post('/api/receivers/rescan');
+  if (!r.ok) { $('rxMsg').textContent = r.data.error || 'could not rescan'; return; }
+  showReceivers(r.data);
+};
+$('saveRx').onclick = async () => {
+  const assign = {};
+  document.querySelectorAll('.rx-assign').forEach(select => { assign[select.dataset.rx] = select.value; });
+  const r = await post('/api/receivers/assign', {assign});
+  if (!r.ok) { $('rxMsg').textContent = r.data.error || 'could not save'; return; }
+  $('toast').className = 'toast ok';
+  $('toast').textContent = 'Receivers saved';
+  setTimeout(() => { location.href = '/'; }, 1200);
+};
+loadReceivers();
 $('forget').onclick = async () => {
   const r = await post('/api/connection/forget');
   say(r.ok, r.ok ? 'board forgotten' : (r.data.error || 'could not forget'));

@@ -23,6 +23,12 @@ bin/librtlsdr.dll
     source  : source/mingw-w64-rtl-sdr-2.0.2-1.src.tar.zst  (the upstream tarball and the build recipe)
     sha-256 : ce770e44df6d58345a617e7601c64d72d0b77a0586de81c30fdacffaff6f98fb
 
+bin/hackrf_iq.exe
+    what    : HackRF One reader for C3CAST-plus (C), binary-safe I/Q to datvrx, after DATVision's rtl_iq
+    licence : GPL v2 or later (hackrf_iq.c); libhackrf 2026.01.3 linked in, BSD 3-Clause (licenses/libhackrf-BSD-3-Clause.txt)
+    source  : hackrf-iq/hackrf_iq.c, source/libhackrf-2026.01.3/ (hackrf.c, hackrf.h); rebuild with hackrf-iq/build.sh
+    sha-256 : 943e1de28988f83d2cc3b2003e614a3b11e2e62e66a8b1878c29a871a135d25f
+
 bin/libusb-1.0.dll
     what    : libusb 1.0.28, the MSYS2 build
     licence : LGPL v2.1 or later

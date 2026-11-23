@@ -1,7 +1,10 @@
-"""Which receiver (web player 1, 2) gets which tuner Automatic: nobody chooses.
+"""Which receiver (web player 1, 2, 3) gets which tuner.
+
+C3CAST-plus: each receiver is "auto" (the next free detected tuner, as before), "none", or pinned to one tuner by its
+key (see key()). Pinned tuners are never taken by an automatic receiver. RX3 is "none" unless the Setup page enables it.
 
 When QOCAST starts, every tuner that is plugged in is listed, in this order: the MiniTiouners (one each, by serial
-number), a PicoTuner (two: channel 1 and channel 2), then the RTL-SDR. Receiver 1 takes the first, receiver 2 the
+number), a PicoTuner (two: channel 1 and channel 2), the RTL-SDR, then a HackRF One. Receiver 1 takes the first, receiver 2 the
 second. The list is made once and kept until QOCAST ends (a running receiver holds its tuner, which hides it from
 the listing); while nothing was found yet it is made again at the next look.
 
@@ -67,6 +70,8 @@ def _enumerate():
                    dict(tuner="picotuner", channel=2, serial=None, label="PicoTuner channel 2", usb_ids=pico_ids)]
     if "rtlsdr" in found:
         result.append(dict(tuner="rtlsdr", channel=1, serial=None, label="RTL-SDR"))
+    if "hackrf" in found:
+        result.append(dict(tuner="hackrf", channel=1, serial=None, label="HackRF One"))
     return result
 
 
@@ -79,8 +84,63 @@ def _driver_readable():
     return library.FT_CreateDeviceInfoList(ctypes.byref(wintypes.DWORD(0))) == 0
 
 
+RECEIVERS = (1, 2, 3)
+DEFAULT_ASSIGN = {1: "auto", 2: "auto", 3: "none"}
+
+
+def key(slot):
+    """A stable name for one tuner: 'minitiouner:<serial>', 'picotuner:1' / 'picotuner:2', 'rtlsdr', 'hackrf'."""
+    tuner = slot.get("tuner", "")
+    if tuner == "minitiouner":
+        return "minitiouner:" + (slot.get("serial") or "")
+    if tuner == "picotuner":
+        return "picotuner:%d" % slot.get("channel", 1)
+    return tuner
+
+
+def reset():
+    """Forget the detected list: the next look lists the USB devices again (only while no receiver holds a tuner)."""
+    global _slots
+    _slots = []
+
+
+def assignment(cfg=None):
+    """{1: 'auto'|'none'|key, 2: ..., 3: ...} from config.json's "rx_assign"; anything unusable falls back to the default."""
+    saved = (cfg or {}).get("rx_assign")
+    saved = saved if isinstance(saved, dict) else {}
+    result = {}
+    for number in RECEIVERS:
+        value = saved.get(str(number))
+        result[number] = value if isinstance(value, str) and value and len(value) <= 64 else DEFAULT_ASSIGN[number]
+    return result
+
+
+def assigned(cfg=None):
+    """{receiver number: slot or None}. Pinned receivers get their tuner if it is plugged in (else None); automatic ones
+    take, in receiver order, the detected tuners nobody pinned."""
+    found = slots()
+    wanted = assignment(cfg)
+    pinned = {value for value in wanted.values() if value not in ("auto", "none")}
+    free = [slot for slot in found if key(slot) not in pinned]
+    result = {}
+    for number in RECEIVERS:
+        value = wanted[number]
+        if value == "none":
+            result[number] = None
+        elif value == "auto":
+            result[number] = free.pop(0) if free else None
+        else:
+            result[number] = next((slot for slot in found if key(slot) == value), None)
+    return result
+
+
+def enabled(cfg=None):
+    """The receivers that have a panel: RX1 and RX2 always, RX3 only when it is not set to "none"."""
+    return tuple(n for n in RECEIVERS if n < 3 or assignment(cfg)[n] != "none")
+
+
 def slots():
-    """[{tuner, channel, serial, label}, ...]: slot 0 is receiver 1's tuner, slot 1 receiver 2's."""
+    """[{tuner, channel, serial, label}, ...]: every free tuner that is plugged in, in the automatic order."""
     global _slots
     if not _slots:
         try:
@@ -90,7 +150,6 @@ def slots():
     return _slots
 
 
-def slot_for(number):
+def slot_for(number, cfg=None):
     """The tuner receiver ``number`` gets, or None."""
-    found = slots()
-    return found[number - 1] if len(found) >= number else None
+    return assigned(cfg).get(number)

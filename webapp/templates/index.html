@@ -234,9 +234,9 @@
             <input id="rxFreq" class="inp" inputmode="decimal" autocomplete="off" spellcheck="false" value="{{ freq }}" style="max-width:9rem" aria-label="Receive frequency in MHz">
             <select id="rxSr" class="inp" style="width:auto" aria-label="Receive symbol rate">{% for r in rates %}<option value="{{ r // 1000 }}">{{ r // 1000 }} kS/s</option>{% endfor %}</select>
             <button id="rxSameTx" class="btn" type="button" title="Copy the transmit frequency and symbol rate">= TX</button>
-            <button id="rxTune" class="btn" type="button">Tune <b id="rxTargetLabel">Receiver 1</b></button>
+            {% for n in rx_numbers %}<button class="btn rx-tune-to" type="button" data-rx="{{ n }}" title="Tune receiver {{ n }} to this frequency">&rarr; RX{{ n }}</button>{% endfor %}
           </div>
-          <div class="hint" style="margin-top:.4rem">On air, receiver 1 follows your own transmission by itself.</div>
+          <div class="hint" style="margin-top:.4rem">On air, receiver 1 follows your own transmission by itself. Selected: <b id="rxTargetLabel">Receiver 1</b> (Enter tunes it).</div>
           <div id="rxSpectrumMessage" class="hint" role="status" aria-live="polite"></div>
         </div>
 {% endif %}
@@ -299,8 +299,8 @@
     </section>
 
   <div class="rx-restore d-none"><button id="showRx2" class="btn" type="button">Show RX2</button></div>
-  <div id="receivers" class="grid rx-grid" aria-label="DATV receivers">
-    {% for n in (1, 2) %}
+  <div id="receivers" class="grid rx-grid{{ ' rx-three' if rx_numbers|length == 3 else '' }}" aria-label="DATV receivers">
+    {% for n in rx_numbers %}
     <section class="panel rx-panel" data-receiver="{{ n }}">
       <div class="ph"><button class="rx-pill" type="button" aria-pressed="{{ 'true' if n == 1 else 'false' }}">Receiver {{ n }}</button><span class="rx-device grow">No receiver connected</span>
         <div class="rx-audio muted">
@@ -313,7 +313,7 @@
         <button class="btn rx-popup-close d-none" type="button" aria-label="Close enlarged receiver">Close &times;</button>
         <button class="btn rx-full" type="button" title="Fullscreen receiver">⛶</button>
       </div>
-      <div class="rx-picture"><div class="rx-placeholder"><div class="rx-empty"><strong>No receiver connected</strong><p>C3CAST automatically detects MiniTiouner, PicoTuner and RTL-SDR USB receivers.</p><p>Connect your receiver, then restart C3CAST to refresh detection.</p></div></div></div>
+      <div class="rx-picture"><div class="rx-placeholder"><div class="rx-empty"><strong>No receiver connected</strong><p>C3CAST detects MiniTiouner, PicoTuner, RTL-SDR and HackRF USB receivers, or uses the one pinned on the <a href="/setup">Setup page</a>.</p><p>Connect your receiver, then press Rescan on the Setup page.</p></div></div></div>
       <div class="pb rx-details">
         <div class="rx-stream">
           <div class="row rx-station"><b data-rx-field="station">No stream</b><span class="grow"></span><span class="rx-lock">Idle</span></div>
@@ -932,19 +932,27 @@ $('freq').addEventListener('change', () => { if (Number.isFinite(freqMHz())) $('
 setInterval(updateHint, 1500);
 
 // ---- 2.4 GHz direct: no spectrum to click, so the receive frequency is typed and tuned with a button
-if ($('rxTune')) {
+if ($('rxFreq')) {
   const rxSay = text => { $('rxSpectrumMessage').textContent = text; };
   const syncRxSr = () => { $('rxSr').value = String(+val('sr') / 1000); };
   syncRxSr();
   $('rxSameTx').onclick = () => { if (Number.isFinite(freqMHz())) $('rxFreq').value = freqMHz().toFixed(3); syncRxSr(); rxSay(''); };
-  $('rxTune').onclick = () => {
+  const rxSignal = () => {
     const f = parseFloat($('rxFreq').value.replace(',', '.')), sr = +$('rxSr').value;
-    if (!Number.isFinite(f) || f < band.rx_min || f > band.rx_max) return rxSay(`receive frequency: ${band.rx_min} to ${band.rx_max} MHz`);
+    if (!Number.isFinite(f) || f < band.rx_min || f > band.rx_max) { rxSay(`receive frequency: ${band.rx_min} to ${band.rx_max} MHz`); return null; }
     $('rxFreq').value = f.toFixed(3);
     rxSay('');
-    window.c3TuneReceiver?.({centerMhz: f, sr});
+    return {centerMhz: f, sr};
   };
-  $('rxFreq').addEventListener('keydown', e => { if (e.key === 'Enter') $('rxTune').click(); });
+  document.querySelectorAll('.rx-tune-to').forEach(b => b.onclick = () => {
+    const signal = rxSignal();
+    if (signal) window.c3TuneReceiverNumber?.(Number(b.dataset.rx), signal);
+  });
+  $('rxFreq').addEventListener('keydown', e => {          // Enter: the selected receiver (its pill)
+    if (e.key !== 'Enter') return;
+    const signal = rxSignal();
+    if (signal) window.c3TuneReceiver?.(signal);
+  });
 }
 
 loadBandplan(); checkBoard(); loadPictures(); loadVideos(); updatePlan(); poll(); setInterval(poll, 1000);

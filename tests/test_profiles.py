@@ -11,7 +11,7 @@ import app as web
 import profiles
 import receivers
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'webapp' / 'receiver'))
-from tuners import QocastBackend, RtlSdrBackend
+from tuners import HackRfBackend, QocastBackend, RtlSdrBackend
 
 
 def offsets(**changes):
@@ -52,7 +52,7 @@ class Profiles(unittest.TestCase):
                 self.assertIsNone(profiles.check_offsets(offsets(**change))[0])
 
 
-class Api(unittest.TestCase):
+class ApiBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.config = Path(self.tmp.name) / 'config.json'
@@ -62,6 +62,8 @@ class Api(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.client = web.app.test_client()
 
+
+class Api(ApiBase):
     def test_bandplan_qo100(self):
         band = self.client.get('/api/bandplan').json
         self.assertEqual(band['profile'], 'qo100')
@@ -79,13 +81,13 @@ class Api(unittest.TestCase):
         page = self.client.get('/').get_data(as_text=True)
         self.assertNotIn('spectrum.js', page)
         self.assertNotIn('id="spectrum"', page)
-        self.assertIn('id="rxTune"', page)
+        self.assertIn('class="btn rx-tune-to"', page)
         self.assertIn('id="rxTargetLabel"', page)       # receivers.js writes to it
 
     def test_index_qo100_keeps_spectrum(self):
         page = self.client.get('/').get_data(as_text=True)
         self.assertIn('spectrum.js', page)
-        self.assertNotIn('id="rxTune"', page)
+        self.assertNotIn('class="btn rx-tune-to"', page)
 
     def test_save_profile_restarts_receivers(self):
         with patch.object(receivers, 'restart') as restart:
@@ -230,6 +232,131 @@ class BiasTee(unittest.TestCase):
         library.rtlsdr_open.side_effect = lambda ref, index: -1
         with patch('ctypes.CDLL', return_value=library), self.assertRaises(OSError):
             tuners.set_rtl_bias_tee(Path('.'), True)
+
+
+class HackRf(unittest.TestCase):
+    def test_plan_keeps_the_signal_beside_the_dc_spike(self):
+        for sr in (125, 250, 333, 500, 1000, 1500):
+            with self.subTest(sr=sr):
+                rate, offset = HackRfBackend.plan(sr)
+                half_width = sr * 1000 * 1.35 / 2                  # occupied half bandwidth, roll-off 0.35 at most
+                self.assertGreater(offset - half_width, 0)          # the spike (at 0) is outside the signal
+                self.assertLess(offset + half_width, rate / 2 * 0.9)  # the signal stays inside the passband
+                self.assertGreaterEqual(rate, 2000000)
+
+    def test_commands(self):
+        backend = HackRfBackend(Path('bin'), 0.0, 0.0, lna=33, vga=31, amp=False, antenna=True)
+        self.assertEqual((backend.lna, backend.vga), (32, 30))        # snapped to the real steps
+        reader, demodulator = backend.command(backend.check(2405.0, 500), 500)
+        self.assertEqual(reader[1:], ['2405375000', '2500000', '32', '30', '0', '1', '--watch-stdin'])
+        arg = lambda name: demodulator[demodulator.index(name) + 1]
+        self.assertEqual((arg('--format'), arg('--rate'), arg('--carrier'), arg('--rs')), ('cs8', '2.5', '-375', '0.5'))
+
+    def test_ranges(self):
+        self.assertAlmostEqual(HackRfBackend(Path('.'), 9750.0, 0.0).check(10491.5, 1500), 741.5)
+        with self.assertRaises(ValueError):
+            HackRfBackend(Path('.'), 9750.0, 0.0).check(2405.0, 500)  # an LNB LO on the 2.4 GHz band
+        with self.assertRaises(ValueError):
+            HackRfBackend(Path('.'), 0.0, 0.0).check(2405.0, 2000)    # beyond datvrx's symbol rate here
+
+    def test_profile_defaults_and_assignment(self):
+        self.assertEqual(profiles.kind_of('hackrf'), 'hackrf')
+        self.assertEqual(profiles.get_offsets({})['2400']['hackrf']['lo'], 0.0)
+        self.assertEqual(profiles.check_offsets(offsets())[1], '')
+        import tuner_assignment
+        detected = [{'id': 'rtlsdr', 'count': 1, 'label': 'RTL-SDR'}, {'id': 'hackrf', 'count': 1, 'label': 'HackRF One'}]
+        with patch.object(tuner_assignment, '_slots', []), patch('usb_devices.detect', return_value=detected), \
+             patch.object(tuner_assignment, 'free_tuners', return_value=[]), \
+             patch.object(tuner_assignment, '_driver_readable', return_value=True):
+            slots = tuner_assignment.slots()
+        self.assertEqual([slot['tuner'] for slot in slots], ['rtlsdr', 'hackrf'])
+
+    def test_receiver_gets_its_own_lo(self):
+        cfg = {'profile': '2400', 'rx_offsets': offsets(**{'2400.hackrf.corr': -0.004})}
+        command = ReceiverArguments.command_for(ReceiverArguments(), cfg, 'hackrf')
+        self.assertEqual(float(command[command.index('--lnb-lo') + 1]), 0.0)
+        self.assertEqual(float(command[command.index('--lnb-correction') + 1]), -0.004)
+
+    def test_setup_page_lists_hackrf(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(web, 'CONFIG', Path(tmp) / 'config.json'):
+            page = web.app.test_client().get('/setup').get_data(as_text=True)
+        self.assertIn('data-off="2400.hackrf.lo"', page)
+
+
+class Assignment(unittest.TestCase):
+    MINI = dict(tuner='minitiouner', channel=1, serial='DA3LGWB6', label='MiniTiouner DA3LGWB6')
+    RTL = dict(tuner='rtlsdr', channel=1, serial=None, label='RTL-SDR')
+    HACK = dict(tuner='hackrf', channel=1, serial=None, label='HackRF One')
+    PICO = [dict(tuner='picotuner', channel=n, serial=None, label=f'PicoTuner channel {n}') for n in (1, 2)]
+
+    def assigned(self, found, assign):
+        import tuner_assignment
+        with patch.object(tuner_assignment, 'slots', return_value=found):
+            return {n: slot and slot['tuner'] for n, slot in tuner_assignment.assigned({'rx_assign': assign}).items()}
+
+    def test_automatic_is_the_old_behaviour(self):
+        self.assertEqual(self.assigned([self.MINI, self.RTL, self.HACK], {}), {1: 'minitiouner', 2: 'rtlsdr', 3: None})
+
+    def test_pinned_tuners_are_not_taken_automatically(self):
+        got = self.assigned([self.MINI, self.RTL, self.HACK], {'1': 'hackrf', '2': 'auto', '3': 'rtlsdr'})
+        self.assertEqual(got, {1: 'hackrf', 2: 'minitiouner', 3: 'rtlsdr'})
+
+    def test_pinned_but_absent_stays_empty(self):
+        self.assertEqual(self.assigned([self.RTL], {'1': 'minitiouner:DA3LGWB6', '2': 'auto'}), {1: None, 2: 'rtlsdr', 3: None})
+
+    def test_rx3_panel_only_when_used(self):
+        import tuner_assignment
+        self.assertEqual(tuner_assignment.enabled({}), (1, 2))
+        self.assertEqual(tuner_assignment.enabled({'rx_assign': {'3': 'auto'}}), (1, 2, 3))
+
+    def test_pico_channel_two_shares_with_whichever_receiver_has_channel_one(self):
+        import tuner_assignment
+        cfg = {'rx_assign': {'1': 'rtlsdr', '2': 'picotuner:2', '3': 'picotuner:1'}}
+        with patch.object(receivers, '_workers', {}), patch.object(receivers, '_closing', False), \
+             patch.object(receivers, '_config', return_value=cfg), \
+             patch.object(tuner_assignment, 'slots', return_value=[self.RTL, *self.PICO]), \
+             patch.object(receivers.threading, 'Thread'):
+            receivers.start(2)
+            self.assertEqual(receivers._workers[2]['primary'], 3)
+            self.assertEqual(receivers._workers[2]['ts_port'], receivers._workers[3]['ts_port2'])
+            self.assertNotIn(1, receivers._workers)
+
+    def test_status_labels(self):
+        import tuner_assignment
+        cfg = {'rx_assign': {'1': 'hackrf', '2': 'none', '3': 'auto'}}
+        with patch.object(receivers, '_config', return_value=cfg), patch.object(receivers, '_workers', {}), \
+             patch.object(tuner_assignment, 'slots', return_value=[self.RTL]):
+            rows = receivers.status()
+        self.assertEqual([r['number'] for r in rows], [1, 2, 3])
+        self.assertIn('not found', rows[0]['label'])
+        self.assertIn('Not used', rows[1]['label'])
+        self.assertEqual(rows[2]['label'], 'RTL-SDR')
+
+
+class AssignmentApi(ApiBase):
+    def test_save_and_refuse(self):
+        import tuner_assignment
+        with patch.object(receivers, 'restart') as restart, patch.object(tuner_assignment, 'slots', return_value=[]):
+            ok = self.client.post('/api/receivers/assign', json={'assign': {'1': 'rtlsdr', '2': 'auto', '3': 'hackrf'}})
+            self.assertEqual(ok.status_code, 200, ok.json)
+            restart.assert_called_once()
+            self.assertEqual(json.loads(self.config.read_text())['rx_assign']['3'], 'hackrf')
+            twice = self.client.post('/api/receivers/assign', json={'assign': {'1': 'rtlsdr', '2': 'rtlsdr', '3': 'none'}})
+            self.assertEqual(twice.status_code, 400)
+            odd = self.client.post('/api/receivers/assign', json={'assign': {'1': '../etc', '2': 'auto', '3': 'none'}})
+            self.assertEqual(odd.status_code, 400)
+            page = self.client.get('/').get_data(as_text=True)
+            self.assertEqual(page.count('class="panel rx-panel"'), 3)
+            self.assertIn('rx-three', page)
+
+    def test_rescan_releases_then_lists_again(self):
+        import tuner_assignment
+        with patch.object(receivers, 'restart') as restart, patch.object(tuner_assignment, 'reset') as reset, \
+             patch.object(tuner_assignment, 'slots', return_value=[Assignment.HACK]):
+            reply = self.client.post('/api/receivers/rescan', json={})
+        restart.assert_called_once()
+        reset.assert_called_once()
+        self.assertEqual(reply.json['detected'], [{'key': 'hackrf', 'label': 'HackRF One'}])
 
 
 if __name__ == '__main__':

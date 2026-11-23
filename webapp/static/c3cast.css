@@ -66,6 +66,12 @@ a:hover { text-decoration: underline; }
 .rx-restore { margin-top: .6rem; text-align: right; }
 .rx-panel { --rx-color: #25c26e; }
 .rx-panel[data-receiver="2"] { --rx-color: #b07cff; }
+.rx-panel[data-receiver="3"] { --rx-color: #ffb84d; }
+.rx-grid.rx-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .rx-grid.rx-three { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+@media (max-width: 820px) { .rx-grid.rx-three { grid-template-columns: minmax(0, 1fr); } }
+.rx-grid.rx-three.rx-single { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }   /* RX2 hidden: RX1 and RX3 side by side */
+@media (max-width: 820px) { .rx-grid.rx-three.rx-single { grid-template-columns: minmax(0, 1fr); } }
 .rx-panel.rx-selected { border-color: var(--rx-color); box-shadow: 0 0 0 1px var(--rx-color); }
 .rx-pill { border: 1px solid var(--rx-color); border-radius: 2rem; padding: .28rem .75rem; font: 600 .85rem var(--mono); color: var(--text); background: var(--panel); cursor: pointer; }
 .rx-pill[aria-pressed="true"] { color: #090c0f; background: var(--rx-color); }

@@ -4,6 +4,7 @@ Recognition follows the tuner code of the QOCAST Player / OpenTuner:
   RTL-SDR       USB 0BDA:2838 or 0BDA:2832
   MiniTiouner   an FTDI chip (0403:6010) whose USB product string contains "MiniTiouner" or "NIM tuner"
   PicoTuner     a USB device whose name contains "PicoTuner" (it has no fixed ID the Player looks for)
+  HackRF One    USB 1D50:6089 (C3CAST-plus)
 Plugged in is not the same as free: another program may be holding the device.
 """
 import re
@@ -13,6 +14,7 @@ from ctypes import wintypes as W
 SUCCESS, BUFFER_SMALL = 0, 0x1A
 FILTER_ENUMERATOR, FILTER_PRESENT = 0x1, 0x100
 RTL_SDR_IDS = ('VID_0BDA&PID_2838', 'VID_0BDA&PID_2832')
+HACKRF_IDS = ('VID_1D50&PID_6089',)
 FTDI_ID = 'VID_0403&PID_6010'
 MINITIOUNER_WORDS = ('minitiouner', 'nim tuner', 'nim db tuner')
 
@@ -68,16 +70,19 @@ def _text(cfg, instance_id, which):
 
 
 def detect():
-    """[{'id': 'rtlsdr'|'minitiouner'|'picotuner', 'label': str, 'count': int}], in that order; [] if none."""
+    """[{'id': 'rtlsdr'|'minitiouner'|'picotuner'|'hackrf', 'label': str, 'count': int}], in that order; [] if none."""
     try:
         cfg = _manager()
-        found = {'rtlsdr': [], 'minitiouner': [], 'picotuner': []}
+        found = {'rtlsdr': [], 'minitiouner': [], 'picotuner': [], 'hackrf': []}
         mini_serials = set()
         pico_ids = set()
         for instance in _instance_ids(cfg):
             top = instance.upper()
             if any(top.startswith('USB\\' + ids + '\\') for ids in RTL_SDR_IDS):
                 found['rtlsdr'].append(_text(cfg, instance, 'bus') or 'RTL-SDR')
+                continue
+            if any(top.startswith('USB\\' + ids + '\\') for ids in HACKRF_IDS):
+                found['hackrf'].append('HackRF One')
                 continue
             if top.startswith('USB\\' + FTDI_ID + '\\'):
                 product = _text(cfg, instance, 'bus')
@@ -93,9 +98,9 @@ def detect():
                 identity = re.search(r'VID_([0-9A-F]{4})&PID_([0-9A-F]{4})', top)
                 if identity:
                     pico_ids.add(tuple(int(value, 16) for value in identity.groups()))
-        labels = {'rtlsdr': 'RTL-SDR', 'minitiouner': 'MiniTiouner', 'picotuner': 'PicoTuner'}
+        labels = {'rtlsdr': 'RTL-SDR', 'minitiouner': 'MiniTiouner', 'picotuner': 'PicoTuner', 'hackrf': 'HackRF One'}
         result = []
-        for kind in ('rtlsdr', 'minitiouner', 'picotuner'):
+        for kind in ('rtlsdr', 'minitiouner', 'picotuner', 'hackrf'):
             devices = found[kind]
             if not devices:
                 continue

@@ -1,6 +1,6 @@
 """QO-100 WebPlayer: live DATV video above, the BATC spectrum below, click a signal to tune (standard library only).
 
-Receivers: RTL-SDR (software demodulator), MiniTiouner and PicoTuner (through the bundled tuner service).
+Receivers: RTL-SDR and HackRF One (software demodulator), MiniTiouner and PicoTuner (through the bundled tuner service).
 The page lists what is plugged in and the user chooses; the choice is remembered in settings.json.
 """
 import argparse
@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 import usb_devices
 from rx_status import ReceiverStatus
 from ts_info import TsInfo
-from tuners import QocastBackend, ReplayBackend, RtlSdrBackend
+from tuners import HackRfBackend, QocastBackend, ReplayBackend, RtlSdrBackend
 
 ROOT = Path(__file__).resolve().parent
 
@@ -42,7 +42,8 @@ STATIC = {'/': ('web/webplayer.html', 'text/html; charset=utf-8'),
           '/constellation.js': ('web/constellation.js', 'text/javascript'),
           '/mse-init.js': ('web/mse-init.js', 'text/javascript'),
           '/magic-eye.js': ('web/magic-eye.js', 'text/javascript')}
-LABELS = {'rtlsdr': 'RTL-SDR', 'minitiouner': 'MiniTiouner', 'picotuner': 'PicoTuner', 'replay': 'Recorded stream (test)'}
+LABELS = {'rtlsdr': 'RTL-SDR', 'minitiouner': 'MiniTiouner', 'picotuner': 'PicoTuner', 'hackrf': 'HackRF One',
+          'replay': 'Recorded stream (test)'}
 LNB_POWER = ('off', 'vertical', 'horizontal')       # the voltage the receiver puts on the coax: none, 13 V, 18 V
 RF_INPUTS = ('A', 'B')
 # What may be tuned, per band profile (MHz): the BATC QO-100 spectrum, or the 13 cm band directly.
@@ -56,7 +57,7 @@ def main():
     parser.add_argument('--lnb-lo', type=float, default=9750.0, help='LNB or downconverter oscillator in MHz (default: 9750; 0: none, tune the frequency as it is)')
     parser.add_argument('--lnb-correction', type=float, default=0.0, help='LNB error in MHz, added to the IF (e.g. 0.05 if the LNB runs 50 kHz high)')
     parser.add_argument('--gain', type=float, help='RTL-SDR RF gain in dB (default: the last choice on the page, else 40.2)')
-    parser.add_argument('--tuner', choices=('rtlsdr', 'minitiouner', 'picotuner'), help='Use this receiver whatever is detected (testing)')
+    parser.add_argument('--tuner', choices=('rtlsdr', 'minitiouner', 'picotuner', 'hackrf'), help='Use this receiver whatever is detected (testing)')
     parser.add_argument('--label', help='What the page says this receiver is (QOCAST assigns it), e.g. "MiniTiouner DA582LER"')
     parser.add_argument('--ffmpeg', type=Path, required=True, help="QOCAST's FFmpeg")
     parser.add_argument('--service-exe', type=Path, default=ROOT / 'tuner-service/bin/tuner-service.exe', help='The bundled tuner service, for MiniTiouner / PicoTuner')
@@ -150,6 +151,13 @@ def serve(args, bin_dir, env):
     for kind in ('minitiouner', 'picotuner'):
         backends[kind] = QocastBackend(kind, args.service_exe, args.service_port, args.ts_port, args.lnb_lo,
                                        args.lnb_correction, lnb_power, rf_input, logs, args.channel, args.ts_port2, args.primary_port)
+    # HackRF: gains and RF amp are remembered once, antenna power per band profile (like the RTL-SDR bias-T)
+    saved_hackrf = settings.get('hackrf') if isinstance(settings.get('hackrf'), dict) else {}
+    number = lambda value, default: value if isinstance(value, (int, float)) and not isinstance(value, bool) else default
+    saved_antenna = saved_hackrf.get('antenna') if isinstance(saved_hackrf.get('antenna'), dict) else {}
+    backends['hackrf'] = HackRfBackend(bin_dir, args.lnb_lo, args.lnb_correction, number(saved_hackrf.get('lna'), 32),
+                                       number(saved_hackrf.get('vga'), 30), saved_hackrf.get('amp') is True,
+                                       saved_antenna.get(args.band) is True)
     if args.input_ts:
         backends['replay'] = ReplayBackend(args.input_ts, args.ffmpeg)
 
@@ -279,6 +287,34 @@ def serve(args, bin_dir, env):
                 save_settings()
                 print('RF gain: %.1f dB' % applied, flush=True)
                 return self.reply(200, json.dumps({'gain': applied}).encode(), 'application/json')
+            if self.path == '/hackrf':           # HackRF gains, RF amp and antenna power: used from the next tuning on
+                _, choice = devices()
+                if choice != 'hackrf':
+                    return self.reply(400, b'Only the HackRF has these settings.')
+                backend = backends['hackrf']
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 300:
+                        raise ValueError('bad size')
+                    wanted = json.loads(self.rfile.read(length))
+                    lna, vga = wanted.get('lna', backend.lna), wanted.get('vga', backend.vga)      # what is not sent stays
+                    amp, antenna = wanted.get('amp', backend.amp), wanted.get('antenna', backend.antenna)
+                    if (not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (lna, vga))
+                            or not all(isinstance(v, bool) for v in (amp, antenna)) or not (0 <= lna <= 40 and 0 <= vga <= 62)):
+                        raise ValueError('range')
+                except (ValueError, TypeError, AttributeError):
+                    return self.reply(400, b'Expected {"lna": 0-40, "vga": 0-62, "amp": bool, "antenna": bool}')
+                backend.lna, backend.vga = HackRfBackend.snap(lna, HackRfBackend.LNA_STEPS), HackRfBackend.snap(vga, HackRfBackend.VGA_STEPS)
+                backend.amp, backend.antenna = amp, antenna
+                saved = settings.get('hackrf') if isinstance(settings.get('hackrf'), dict) else {}
+                antennas = saved.get('antenna') if isinstance(saved.get('antenna'), dict) else {}
+                settings['hackrf'] = {'lna': backend.lna, 'vga': backend.vga, 'amp': backend.amp,
+                                      'antenna': {**antennas, args.band: backend.antenna}}
+                save_settings()
+                print('HackRF: LNA %d dB, VGA %d dB, amp %s, antenna power %s (%s)' % (
+                    backend.lna, backend.vga, 'on' if backend.amp else 'off', 'on' if backend.antenna else 'off', args.band), flush=True)
+                return self.reply(200, json.dumps({'lna': backend.lna, 'vga': backend.vga, 'amp': backend.amp,
+                                                   'antenna': backend.antenna}).encode(), 'application/json')
             if self.path == '/bias':             # RTL-SDR bias-T: used from the next tuning on
                 _, choice = devices()
                 if choice != 'rtlsdr':
@@ -342,6 +378,9 @@ def serve(args, bin_dir, env):
                     'controls': {'lnb_power': backends[choice].lnb_power, 'rf_input': backends[choice].rf_input} if hardware and args.channel == 1 else None,
                     'gain': {'value': backends['rtlsdr'].gain, 'steps': RtlSdrBackend.GAIN_STEPS} if choice == 'rtlsdr' else None,
                     'bias_tee': {'on': backends['rtlsdr'].bias_tee, 'band': args.band} if choice == 'rtlsdr' else None,
+                    'hackrf': {'lna': backends['hackrf'].lna, 'vga': backends['hackrf'].vga, 'amp': backends['hackrf'].amp,
+                               'antenna': backends['hackrf'].antenna, 'lna_steps': HackRfBackend.LNA_STEPS,
+                               'vga_steps': HackRfBackend.VGA_STEPS} if choice == 'hackrf' else None,
                     }).encode(), 'application/json')
             if url.path in STATIC:
                 name, ctype = STATIC[url.path]

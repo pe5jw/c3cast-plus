@@ -3,6 +3,7 @@
 Each profile keeps its own receiver frequency conversion, per kind of receiver:
   rtlsdr  the RTL-SDR (software demodulator), IF range 24-1766 MHz
   nim     MiniTiouner / PicoTuner (hardware demodulator), IF range 144-2450 MHz
+  hackrf  HackRF One (software demodulator), IF range 1-6000 MHz: 2.4 GHz directly, no converter
 The receiver tunes  IF = RF - LO + correction  (all MHz). LO 0 means "no converter": the frequency goes to the
 tuner as it is (a MiniTiouner then runs in its direct mode, with the LNB supply off).
 
@@ -11,26 +12,26 @@ Typical LOs: 9750 standard LNB (QO-100), 9739 or other values for modified / PLL
 """
 
 PROFILES = ("qo100", "2400")
-KINDS = ("rtlsdr", "nim")
+KINDS = ("rtlsdr", "nim", "hackrf")
 LABELS = {"qo100": "QO-100", "2400": "2.4 GHz direct"}
 
 # Received RF range per profile, MHz: what a receiver may be tuned to.
 RX_RANGE = {"qo100": (10490.0, 10500.0), "2400": (2300.0, 2450.0)}
 # IF range each kind of receiver can tune, MHz.
-IF_RANGE = {"rtlsdr": (24.0, 1766.0), "nim": (144.0, 2450.0)}
+IF_RANGE = {"rtlsdr": (24.0, 1766.0), "nim": (144.0, 2450.0), "hackrf": (1.0, 6000.0)}
 
 DEFAULT_PROFILE = "qo100"
 DEFAULT_OFFSETS = {
-    "qo100": {"rtlsdr": {"lo": 9750.0, "corr": 0.0}, "nim": {"lo": 9750.0, "corr": 0.0}},
-    "2400": {"rtlsdr": {"lo": 1500.0, "corr": 0.0}, "nim": {"lo": 0.0, "corr": 0.0}},
+    "qo100": {"rtlsdr": {"lo": 9750.0, "corr": 0.0}, "nim": {"lo": 9750.0, "corr": 0.0}, "hackrf": {"lo": 9750.0, "corr": 0.0}},
+    "2400": {"rtlsdr": {"lo": 1500.0, "corr": 0.0}, "nim": {"lo": 0.0, "corr": 0.0}, "hackrf": {"lo": 0.0, "corr": 0.0}},
 }
 LO_MAX = 20000.0          # MHz
 CORR_MAX = 50.0           # MHz, either way
 
 
 def kind_of(tuner):
-    """'rtlsdr' or 'nim' for a tuner id from tuner_assignment (rtlsdr / minitiouner / picotuner)."""
-    return "rtlsdr" if tuner == "rtlsdr" else "nim"
+    """'rtlsdr', 'hackrf' or 'nim' for a tuner id from tuner_assignment (rtlsdr / hackrf / minitiouner / picotuner)."""
+    return tuner if tuner in ("rtlsdr", "hackrf") else "nim"
 
 
 def get_profile(cfg):
@@ -84,7 +85,7 @@ def check_offsets(data):
             middle = if_of((low + high) / 2, lo, corr)
             lo_if, hi_if = IF_RANGE[kind]
             if not lo_if <= middle <= hi_if:
-                name = "RTL-SDR" if kind == "rtlsdr" else "MiniTiouner / PicoTuner"
+                name = {"rtlsdr": "RTL-SDR", "hackrf": "HackRF"}.get(kind, "MiniTiouner / PicoTuner")
                 return None, (f"{LABELS[profile]}, {name}: LO {lo:g} MHz gives an IF of {middle:.1f} MHz, "
                               f"outside the {lo_if:g}-{hi_if:g} MHz this receiver can tune")
             clean[profile][kind] = {"lo": lo, "corr": corr}

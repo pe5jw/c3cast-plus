@@ -10,8 +10,9 @@ html,body{margin:0;height:100%;background:#000;color:#e1e9ee;font:13px system-ui
 #top.open{display:flex}
 #top select{background:#15232e;color:#e1e9ee;border:1px solid #2b4558;border-radius:8px;padding:3px 8px;font:inherit;cursor:pointer}
 #tuner:disabled{opacity:1;color:#e1e9ee;background:transparent;border-color:transparent;-webkit-appearance:none;appearance:none;cursor:default;font-weight:600}
-#lnbBox,#gainBox,#rfBox,#biasBox{display:flex;align-items:center;gap:6px}
-#lnbBox[hidden],#gainBox[hidden],#rfBox[hidden],#biasBox[hidden]{display:none}
+#lnbBox,#gainBox,#rfBox,#biasBox,#hackrfBox{display:flex;align-items:center;gap:6px}
+#lnbBox[hidden],#gainBox[hidden],#rfBox[hidden],#biasBox[hidden],#hackrfBox[hidden]{display:none}
+#hackrfBox input:checked+span{color:#ffb84d;font-weight:600}
 #biasBox input:checked+span{color:#ffb84d;font-weight:600}
 #gain{width:90px}
 #gainVal{min-width:4.2em;color:#e1e9ee}
@@ -40,7 +41,11 @@ video.signal-lost{filter:brightness(.4)}
 <span id="lnbBox" hidden><label for="lnb">LNB power</label><select id="lnb" title="Voltage sent up the coax to the LNB"><option value="off">LNB off</option><option value="vertical">LNB vertical</option><option value="horizontal">LNB horizontal</option></select>
 <span id="rfBox"><label for="rfin">Input</label><select id="rfin" title="Which RF input of the receiver is used"><option value="A">Input A</option><option value="B">Input B</option></select></span></span>
 <span id="gainBox" hidden><label for="gain">RF gain</label><input id="gain" type="range" min="0" max="28" step="1" value="22" aria-label="RF gain"><span id="gainVal"></span></span>
-<label id="biasBox" hidden title="About 4.5 V on the RTL-SDR antenna input, e.g. to power a Nooelec Ham It Down. Do not also power that converter by USB, and never use it into an LNB or splitter that already carries voltage."><input id="bias" type="checkbox"><span>Bias-T</span></label></div>
+<label id="biasBox" hidden title="About 4.5 V on the RTL-SDR antenna input, e.g. to power a Nooelec Ham It Down. Do not also power that converter by USB, and never use it into an LNB or splitter that already carries voltage."><input id="bias" type="checkbox"><span>Bias-T</span></label>
+<span id="hackrfBox" hidden><label for="hlna">LNA</label><select id="hlna" title="HackRF IF / LNA gain"></select>
+<label for="hvga">VGA</label><select id="hvga" title="HackRF baseband gain"></select>
+<label title="+14 dB RF amplifier: only for weak signals. Never next to your own transmitter: keep the HackRF input below -5 dBm (use an attenuator on a cable)."><input id="hamp" type="checkbox"><span>Amp</span></label>
+<label title="About 3.3 V, 50 mA on the antenna input, for a small preamp. Not enough for an LNB; never into a cable that already carries voltage."><input id="hant" type="checkbox"><span>Ant. power</span></label></span></div>
 <video id="video" playsinline></video>
 <div id="sound"><input id="volume" type="range" min="0" max="1" step="0.05" value="1" title="Volume" aria-label="Volume"><button id="mute" title="Mute / unmute" aria-label="Mute / unmute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor"/><g class="waves"><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></g><g class="cross"><path d="M16 9.5l5 5M21 9.5l-5 5" stroke="#ff6b6b"/></g></svg></button></div>
 <div id="call" hidden><b id="callnum"></b><span id="calltext"></span></div>
@@ -193,6 +198,12 @@ async function loadDevices(){
    // RF gain exists only on the RTL-SDR (a MiniTiouner / PicoTuner has its own AGC)
    el('gainBox').hidden=!d.gain;
    el('biasBox').hidden=!d.bias_tee;
+   el('hackrfBox').hidden=!d.hackrf;
+   if(d.hackrf&&document.activeElement?.closest('#hackrfBox')==null){
+    const fill=(id,steps,value)=>{const s=el(id);if(s.options.length!==steps.length)s.replaceChildren(...steps.map(v=>new Option(v+' dB',v)));s.value=String(value);};
+    fill('hlna',d.hackrf.lna_steps,d.hackrf.lna);fill('hvga',d.hackrf.vga_steps,d.hackrf.vga);
+    el('hamp').checked=d.hackrf.amp;el('hant').checked=d.hackrf.antenna;
+   }
    if(d.bias_tee)el('bias').checked=d.bias_tee.on;
    if(d.gain){gainSteps=d.gain.steps;el('gain').max=gainSteps.length-1;el('gain').value=gainSteps.indexOf(d.gain.value);showGain();}
    // Nothing tuned yet and a receiver is chosen (at the start, or after choosing another): the QO-100 beacon
@@ -244,6 +255,17 @@ el('bias').onchange=async()=>{
  status.textContent='Bias-T '+(on?'on':'off')+(live&&tuned?' — the receiver tunes again…':' from the next tuning');
  if(live&&tuned)tune(tuned);
 };
+// HackRF: gains, RF amp and antenna power are used when the HackRF is next opened, so a change retunes.
+async function sendHackrf(){
+ const body={lna:Number(el('hlna').value),vga:Number(el('hvga').value),amp:el('hamp').checked,antenna:el('hant').checked};
+ try{
+  const answer=await fetch('/hackrf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!answer.ok)throw Error(await answer.text());
+ }catch(e){status.textContent='HackRF setting not changed: '+e.message;loadDevices();return;}
+ status.textContent='HackRF settings changed'+(live&&tuned?' — the receiver tunes again…':', used from the next tuning');
+ if(live&&tuned)tune(tuned);
+}
+el('hlna').onchange=el('hvga').onchange=el('hamp').onchange=el('hant').onchange=sendHackrf;
 loadDevices();setInterval(loadDevices,4000);
 // Receiver lock from the server, for the status line
 // Until the first picture is on screen, the middle of the box says what is happening.
