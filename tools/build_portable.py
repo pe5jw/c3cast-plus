@@ -120,7 +120,7 @@ for clip in SAMPLE_FILMS:
 SAMPLE_PICTURES = ("C3CAST_ ESP32-C3 DATV for QO-100.png", "C3SCOPE-closing.png", "C3SCOPE-promo.png", "SP8ESA.png", "real.png", "tescard.png")
 for picture in SAMPLE_PICTURES:
     shutil.copy2(ROOT / "webapp" / "pictures" / picture, OUT / "pictures" / picture)
-for document in ("docs/screenshot.png", f"docs/releases/v{version.__version__}.md", f"docs/releases/v{version.__version__}-validation.md"):
+for document in ("docs/plus/three-receivers.jpg", f"docs/releases/v{version.__version__}.md", f"docs/releases/v{version.__version__}-validation.md"):
     if need(ROOT / document):
         shutil.copy2(ROOT / document, OUT / Path(document).name)
 shutil.copy2(ROOT / "LICENSE", OUT / "LICENSE")
@@ -136,7 +136,7 @@ shutil.copy2(ROOT / "LICENSE.upstream", OUT / "LICENSE-firmware-SP8ESA.txt")
     "\r\n"
     "Your own pictures go in the 'pictures' folder (PNG or JPG, 16:9, 1280x720 is ideal).\r\n"
     f"Your settings are saved in config.json next to {EXE}.exe.\r\n"
-    "A screenshot of the 1.0.0 interface is included as screenshot.png.\r\n"
+    "three-receivers.jpg shows C3CAST-plus receiving its own signal with three receivers.\r\n"
     "H266-Player is an optional receiver for H.265 and H.266 (its own program and licence): start it with the Player button in the page.\r\n"
     "Delete that folder if you do not need it; the button then disappears.\r\n"
     "Two integrated receiver panels (three with Receiver 3) are below the transmit controls. Connect a MiniTiouner, PicoTuner,\r\n"
