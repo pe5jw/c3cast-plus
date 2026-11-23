@@ -51,6 +51,46 @@
   </section>
 
   <section class="panel" style="margin-top:.6rem">
+    <div class="ph"><svg class="i"><use href="#i-wave"/></svg>Band profile &amp; receivers</div>
+    <div class="pb">
+      <div class="field">
+        <div class="lab"><label>Band profile</label></div>
+        <div style="display:flex;flex-wrap:wrap;gap:.4rem 2rem">
+          <label style="cursor:pointer"><input type="radio" name="profile" value="qo100"> QO-100 <span class="note">(via the satellite: slots, beacon, BATC spectrum)</span></label>
+          <label style="cursor:pointer"><input type="radio" name="profile" value="2400"> 2.4 GHz direct <span class="note">(no satellite: free frequency, receive your own signal)</span></label>
+        </div>
+      </div>
+      <div class="field">
+        <div class="lab"><label>Receiver conversion</label><span>MHz · IF = RF − LO + correction</span></div>
+        <table class="note" style="width:100%;border-collapse:collapse;color:var(--text)">
+          <thead><tr style="text-align:left"><th style="padding:.2rem .4rem">Profile</th><th style="padding:.2rem .4rem">Receiver</th>
+            <th style="padding:.2rem .4rem">LO</th><th style="padding:.2rem .4rem">Correction</th></tr></thead>
+          <tbody>
+          {% for profile, plabel in [('qo100', 'QO-100'), ('2400', '2.4 GHz direct')] %}{% for kind, klabel in [('rtlsdr', 'RTL-SDR'), ('nim', 'MiniTiouner / PicoTuner')] %}
+            <tr data-profile="{{ profile }}">
+              <td style="padding:.2rem .4rem">{{ plabel if loop.first else '' }}</td>
+              <td style="padding:.2rem .4rem">{{ klabel }}</td>
+              <td style="padding:.2rem .4rem"><input class="inp" inputmode="decimal" data-off="{{ profile }}.{{ kind }}.lo" style="max-width:8rem" aria-label="{{ plabel }} {{ klabel }} LO in MHz"></td>
+              <td style="padding:.2rem .4rem"><input class="inp" inputmode="decimal" data-off="{{ profile }}.{{ kind }}.corr" style="max-width:7rem" aria-label="{{ plabel }} {{ klabel }} correction in MHz"></td>
+            </tr>
+          {% endfor %}{% endfor %}
+          </tbody>
+        </table>
+        <div class="note" style="margin-top:.4rem">
+          LO examples: <b>9750</b> standard LNB · <b>9739</b> or another value for a modified / PLL LNB ·
+          <b>1500</b> Nooelec Ham It Down (2.4 GHz → about 900 MHz for an RTL-SDR) · <b>0</b> no converter
+          (MiniTiouner direct on 2.4 GHz; the LNB supply then stays off).
+          Correction: the converter's error, e.g. 0.05 if it runs 50 kHz high.
+        </div>
+      </div>
+      <div class="field">
+        <button id="saveBand" class="btn save-primary" type="button"><svg class="i"><use href="#i-save"/></svg>Save band settings</button>
+        <div id="bandMsg" class="note" role="status" style="margin-top:.5rem"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" style="margin-top:.6rem">
     <div class="ph"><svg class="i"><use href="#i-plug"/></svg>Saved board</div>
     <div class="pb">
       <div id="board" class="note field" style="font-size:.92rem;color:var(--text)"></div>
@@ -76,7 +116,31 @@ function show(s) {
   $('callsign').value = s.callsign; $('locator').value = s.locator; $('marquee').checked = s.marquee; $('banner').checked = s.banner;
   document.querySelector(`input[name=clockzone][value=${s.local_time ? 'local' : 'utc'}]`).checked = true; dimTime();
   $('board').textContent = s.board.port ? `${s.board.port} · USB serial ${s.board.serial || 'unknown'}` : 'none saved';
+  document.querySelector(`input[name=profile][value="${s.profile}"]`).checked = true;
+  document.querySelectorAll('[data-off]').forEach(e => {
+    const [profile, kind, key] = e.dataset.off.split('.');
+    e.value = s.rx_offsets[profile][kind][key];
+  });
+  showActiveProfile();
 }
+function showActiveProfile() {             // the rows of the profile not in use are dimmed, still editable
+  const active = document.querySelector('input[name=profile]:checked')?.value;
+  document.querySelectorAll('tr[data-profile]').forEach(r => { r.style.opacity = r.dataset.profile === active ? '' : '.5'; });
+}
+document.querySelectorAll('input[name=profile]').forEach(e => e.onchange = showActiveProfile);
+$('saveBand').onclick = async () => {
+  const offsets = {};
+  document.querySelectorAll('[data-off]').forEach(e => {
+    const [profile, kind, key] = e.dataset.off.split('.');
+    ((offsets[profile] ??= {})[kind] ??= {})[key] = e.value;
+  });
+  $('bandMsg').className = 'note'; $('bandMsg').textContent = 'saving, the receivers restart…';
+  const r = await post('/api/profile', {profile: document.querySelector('input[name=profile]:checked').value, rx_offsets: offsets});
+  if (!r.ok) { $('bandMsg').className = 'note bad-text'; $('bandMsg').textContent = r.data.error || 'could not save'; return; }
+  $('toast').className = 'toast ok';
+  $('toast').textContent = 'Band settings saved';
+  setTimeout(() => { location.href = '/'; }, 1200);
+};
 function dimTime() {                       // no banner, no clock: the choice is greyed out
   document.querySelectorAll('input[name=clockzone]').forEach(e => e.disabled = !$('banner').checked);
   $('timeRow').style.opacity = $('banner').checked ? '' : '.45';

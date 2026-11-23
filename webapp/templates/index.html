@@ -220,15 +220,29 @@
       <div class="ph"><svg class="i"><use href="#i-wave"/></svg>Link<span class="grow"></span>
         <span style="letter-spacing:.06em;text-transform:none;font-weight:400"><span id="hdrFreq">{{ freq }}</span> MHz &middot; DVB-S2 QPSK</span></div>
       <div class="pb">
+{% if profile == 'qo100' %}
         <div class="field spectrum-field">
           <div class="lab">QO-100 wideband<span id="specChip" class="chip"><i class="led"></i><span id="specChipText">connecting</span></span></div>
           <div class="spectrum-plot"><canvas id="spectrum" class="spectrum"></canvas></div>
             <div class="hint" style="margin-top:.4rem">Click a signal to tune <b id="rxTargetLabel">Receiver 1</b> · green slots below select TX</div>
             <div id="rxSpectrumMessage" class="hint" role="status" aria-live="polite"></div>
         </div>
+{% else %}
+        <div class="field rx-direct">
+          <div class="lab"><label for="rxFreq">Receive</label><span>2.4 GHz direct · no satellite · <a href="/setup">LO setup</a></span></div>
+          <div class="freqrow" style="flex-wrap:wrap;gap:.4rem">
+            <input id="rxFreq" class="inp" inputmode="decimal" autocomplete="off" spellcheck="false" value="{{ freq }}" style="max-width:9rem" aria-label="Receive frequency in MHz">
+            <select id="rxSr" class="inp" style="width:auto" aria-label="Receive symbol rate">{% for r in rates %}<option value="{{ r // 1000 }}">{{ r // 1000 }} kS/s</option>{% endfor %}</select>
+            <button id="rxSameTx" class="btn" type="button" title="Copy the transmit frequency and symbol rate">= TX</button>
+            <button id="rxTune" class="btn" type="button">Tune <b id="rxTargetLabel">Receiver 1</b></button>
+          </div>
+          <div class="hint" style="margin-top:.4rem">On air, receiver 1 follows your own transmission by itself.</div>
+          <div id="rxSpectrumMessage" class="hint" role="status" aria-live="polite"></div>
+        </div>
+{% endif %}
         <div class="field">
-          <div class="lab"><label for="freq">Frequency</label><span>MHz uplink</span></div>
-          <div class="freqrow"><input id="freq" class="inp" inputmode="decimal" autocomplete="off" spellcheck="false" value="{{ freq }}"><span id="freqDn" class="dn">DN -</span></div>
+          <div class="lab"><label for="freq">Frequency</label><span>{{ 'MHz uplink' if profile == 'qo100' else 'MHz · 2.4 GHz direct' }}</span></div>
+          <div class="freqrow"><input id="freq" class="inp" inputmode="decimal" autocomplete="off" spellcheck="false" value="{{ freq }}"><span id="freqDn" class="dn{{ '' if profile == 'qo100' else ' d-none' }}">DN -</span></div>
         </div>
       </div>
     </section>
@@ -329,7 +343,7 @@
   <footer><span>{{ app_name }} v{{ app_version }} &middot; by HB9IIU</span><span>firmware: SP8ESA ESP32-DATV &middot; PTT on D10</span></footer>
 </div>
 
-<script id="window-config" type="application/json">{{ {'guarded': single_window, 'before': ['signal-finder.js', 'spectrum.js', 'magic-eye.js'], 'after': ['receivers.js'], 'version': app_version}|tojson }}</script>
+<script id="window-config" type="application/json">{{ {'guarded': single_window, 'before': (['signal-finder.js', 'spectrum.js', 'magic-eye.js'] if profile == 'qo100' else ['magic-eye.js']), 'after': ['receivers.js'], 'version': app_version}|tojson }}</script>
 <script id="console-code" type="text/plain">
 const $ = id => document.getElementById(id);
 const val = name => document.querySelector(`input[name=${name}]:checked`).value;
@@ -343,7 +357,7 @@ $('vvc').onchange = () => {
   $('vvcNote').classList.toggle('d-none', !$('vvc').checked);
   updatePlan();
 };
-let band = {offset_mhz: 8089.5, allowed: {}, min: 2300, max: 2450};
+let band = {profile: '{{ profile }}', offset_mhz: {{ 8089.5 if profile == 'qo100' else 0 }}, allowed: {}, min: 2300, max: 2450, rx_min: 2300, rx_max: 2450};
 
 const chip = (id, cls, text) => { $(id).className = 'chip ' + cls; $(id + 'Text').textContent = text; };
 const hms = s => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(n => String(n).padStart(2, '0')).join(':');
@@ -883,7 +897,7 @@ function freqChanged() {
   const f = freqMHz(), sr = +val('sr'), half = sr * 1.35 / 2e6;
   freqOk = Number.isFinite(f) && f >= band.min + half && f <= band.max - half;
   $('hdrFreq').textContent = Number.isFinite(f) ? f.toFixed(3) : '-';
-  $('freqDn').textContent = Number.isFinite(f) ? 'DN ' + (f + band.offset_mhz).toFixed(3) : 'DN -';
+  if (band.profile === 'qo100') $('freqDn').textContent = Number.isFinite(f) ? 'DN ' + (f + band.offset_mhz).toFixed(3) : 'DN -';
   window.QO_ALLOWED_MHZ = band.allowed[String(sr)] || [];
   window.QO_WIDE = sr === 1000000;
   window.QO_SR_KS = sr / 1000;
@@ -896,6 +910,7 @@ function updateHint() {
   const f = freqMHz(), sr = +val('sr'), half = sr * 1.35 / 2e6, box = $('freq');
   const say = (text, color) => { box.title = text; box.classList.toggle('bad', color === 'var(--bad)'); };   // tooltip + red value
   if (!freqOk) return say(`${(band.min + half).toFixed(3)} to ${(band.max - half).toFixed(3)} MHz at this symbol rate`, 'var(--bad)');
+  if (band.profile !== 'qo100') return say('2.4 GHz direct · no QO-100 slots');
   const slot = slotFor(f);
   if (slot === undefined) return say('not on the QO-100 slot grid (fine for a bench test)');
   const label = 'slot ' + slot.toFixed(2) + ' DN';
@@ -915,6 +930,22 @@ window.onBatcSlotSelected = (center) => { $('freq').value = (center - band.offse
 $('freq').addEventListener('input', freqChanged);
 $('freq').addEventListener('change', () => { if (Number.isFinite(freqMHz())) $('freq').value = freqMHz().toFixed(3); freqChanged(); });
 setInterval(updateHint, 1500);
+
+// ---- 2.4 GHz direct: no spectrum to click, so the receive frequency is typed and tuned with a button
+if ($('rxTune')) {
+  const rxSay = text => { $('rxSpectrumMessage').textContent = text; };
+  const syncRxSr = () => { $('rxSr').value = String(+val('sr') / 1000); };
+  syncRxSr();
+  $('rxSameTx').onclick = () => { if (Number.isFinite(freqMHz())) $('rxFreq').value = freqMHz().toFixed(3); syncRxSr(); rxSay(''); };
+  $('rxTune').onclick = () => {
+    const f = parseFloat($('rxFreq').value.replace(',', '.')), sr = +$('rxSr').value;
+    if (!Number.isFinite(f) || f < band.rx_min || f > band.rx_max) return rxSay(`receive frequency: ${band.rx_min} to ${band.rx_max} MHz`);
+    $('rxFreq').value = f.toFixed(3);
+    rxSay('');
+    window.c3TuneReceiver?.({centerMhz: f, sr});
+  };
+  $('rxFreq').addEventListener('keydown', e => { if (e.key === 'Enter') $('rxTune').click(); });
+}
 
 loadBandplan(); checkBoard(); loadPictures(); loadVideos(); updatePlan(); poll(); setInterval(poll, 1000);
 

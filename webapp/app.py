@@ -20,6 +20,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 APP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(APP_DIR))
 import bandplan  # noqa: E402
+import profiles  # noqa: E402
 import camera  # noqa: E402
 import paths  # noqa: E402
 import qo100_enc  # noqa: E402
@@ -141,6 +142,11 @@ def setup_ready():
 
 def get_freq():
     return load_config().get("freq", FREQ_DEFAULT)
+
+
+def get_band_profile():
+    """'qo100' (via the satellite: slots, beacon, BATC spectrum) or '2400' (direct 13 cm: free frequencies)."""
+    return profiles.get_profile(load_config())
 
 
 def check_freq(value, sr):
@@ -387,7 +393,7 @@ def api_bye():
 
 @app.get("/")
 def index():
-    return render_template("index.html", rates=SYMBOL_RATES, fecs=FECS, freq=get_freq(),
+    return render_template("index.html", rates=SYMBOL_RATES, fecs=FECS, freq=get_freq(), profile=get_band_profile(),
                            lmin=level_limits()[0], lmax=level_limits()[1], ldef=level_limits()[0], level_min=level_limits()[0], max_seconds=MAX_SECONDS,
                            setup_ready=setup_ready())
 
@@ -446,7 +452,30 @@ def setup_page():
 @app.get("/api/setup")
 def api_setup_get():
     cfg = load_config()
-    return jsonify(**get_setup(), board={"port": cfg.get("port", ""), "serial": cfg.get("serial", "")})
+    return jsonify(**get_setup(), board={"port": cfg.get("port", ""), "serial": cfg.get("serial", "")},
+                   profile=profiles.get_profile(cfg), rx_offsets=profiles.get_offsets(cfg))
+
+
+@app.post("/api/profile")
+def api_profile():
+    """Setup page: band profile and each profile's receiver LO / correction. The receivers are restarted so they use
+    the new values (the page reloads after saving). Not while transmitting: the transmission would lose its monitor."""
+    d = request.get_json(silent=True) or {}
+    profile = d.get("profile")
+    if profile not in profiles.PROFILES:
+        return jsonify(error="unknown band profile"), 400
+    offsets, error = profiles.check_offsets(d.get("rx_offsets"))
+    if error:
+        return jsonify(error=error), 400
+    with lock:
+        if tx["proc"] is not None or tx["state"] in ("starting", "stopping"):
+            return jsonify(error="stop the transmission first"), 409
+    cfg = load_config()
+    changed = profiles.get_profile(cfg) != profile or profiles.get_offsets(cfg) != offsets
+    write_config(profile=profile, rx_offsets=offsets)
+    if changed:
+        receivers.restart()
+    return jsonify(ok=True, profile=profile, rx_offsets=offsets, restarted=changed)
 
 
 @app.post("/api/level-limits")
@@ -711,9 +740,14 @@ def api_player_open():
 
 @app.get("/api/bandplan")
 def api_bandplan():
-    """QO-100 slot rules (QOCAST's bandplan.py) for the spectrum, the downlink-to-uplink offset and the remembered frequency."""
-    return jsonify(offset_mhz=bandplan.DOWNLINK_TO_UPLINK_OFFSET_KHZ / 1000,
-                   allowed={str(sr): [k / 1000 for k in bandplan.allowed_slots(sr // 1000)] for sr in SYMBOL_RATES},
+    """The band profile for the page. QO-100: QOCAST's slot rules for the spectrum and the uplink-to-downlink offset.
+    2400: no slots and no offset (the receivers listen on the transmit frequency itself)."""
+    profile = get_band_profile()
+    qo100 = profile == "qo100"
+    return jsonify(profile=profile, label=profiles.LABELS[profile],
+                   offset_mhz=bandplan.DOWNLINK_TO_UPLINK_OFFSET_KHZ / 1000 if qo100 else 0.0,
+                   allowed={str(sr): [k / 1000 for k in bandplan.allowed_slots(sr // 1000)] for sr in SYMBOL_RATES} if qo100 else {},
+                   rx_min=profiles.RX_RANGE[profile][0], rx_max=profiles.RX_RANGE[profile][1],
                    freq=get_freq(), min=FREQ_MIN, max=FREQ_MAX)
 
 

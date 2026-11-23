@@ -9,12 +9,25 @@ import time
 import urllib.request
 
 import paths
+import profiles
 import tuner_assignment
 import tuner_access
 
 _lock = threading.RLock()
 _workers = {}
 _closing = False
+
+
+def _band(tuner):
+    """(profile, LO MHz, correction MHz) for this tuner from config.json (the Setup page)."""
+    try:
+        cfg = json.loads((paths.DATA / 'config.json').read_text())
+        cfg = cfg if isinstance(cfg, dict) else {}
+    except (OSError, ValueError):
+        cfg = {}
+    profile = profiles.get_profile(cfg)
+    offset = profiles.get_offsets(cfg)[profile][profiles.kind_of(tuner)]
+    return profile, offset['lo'], offset['corr']
 
 
 def _port(kind=socket.SOCK_STREAM):
@@ -89,6 +102,10 @@ def _launch(number, slot, entry, shared):
             '--ts-port2', str(entry['ts_port2']),
             '--settings', str(data / 'settings.json'), '--logs', str(data / 'logs'),
             '--ffmpeg', str(ffmpeg), '--tuner', slot['tuner'], '--label', slot['label']]
+        profile, lo, corr = _band(slot['tuner'])
+        command += ['--band', profile, '--lnb-lo', repr(lo), '--lnb-correction', repr(corr)]
+        if profile != 'qo100':
+            command.append('--no-autotune')       # no beacon outside QO-100: wait for a tune from the page
         if shared:
             command += ['--channel', '2', '--primary-port', str(entry['primary_port'])]
         env = dict(os.environ)
@@ -97,8 +114,8 @@ def _launch(number, slot, entry, shared):
         else:
             env.pop('QOCAST_TUNER_SERIAL', None)
         with _lock:
-            if _closing:
-                return
+            if _closing or entry.get('cancelled'):
+                return                              # closing, or restarted while this one was being prepared
             log = (data / 'server.log').open('wb')
             try:
                 proc = subprocess.Popen(command, cwd=paths.RECEIVER, env=env, stdin=subprocess.PIPE,
@@ -129,6 +146,20 @@ def stop():
     with _lock:
         _closing = True
         processes = [entry['proc'] for entry in _workers.values() if entry.get('proc')]
+    _stop_processes(processes)
+
+
+def restart():
+    """Stop every receiver and forget it, so the next start (the page asks again) uses the new band settings."""
+    with _lock:
+        processes = [entry['proc'] for entry in _workers.values() if entry.get('proc')]
+        for entry in _workers.values():
+            entry['cancelled'] = True           # a launch still being prepared must not start
+        _workers.clear()
+    _stop_processes(processes)
+
+
+def _stop_processes(processes):
     # EOF asks the servers to clean up their demodulator and encoder before exiting.
     for proc in processes:
         if proc.poll() is None:

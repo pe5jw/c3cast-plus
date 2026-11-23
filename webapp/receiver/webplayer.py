@@ -45,12 +45,15 @@ STATIC = {'/': ('web/webplayer.html', 'text/html; charset=utf-8'),
 LABELS = {'rtlsdr': 'RTL-SDR', 'minitiouner': 'MiniTiouner', 'picotuner': 'PicoTuner', 'replay': 'Recorded stream (test)'}
 LNB_POWER = ('off', 'vertical', 'horizontal')       # the voltage the receiver puts on the coax: none, 13 V, 18 V
 RF_INPUTS = ('A', 'B')
+# What may be tuned, per band profile (MHz): the BATC QO-100 spectrum, or the 13 cm band directly.
+BANDS = {'qo100': (10490.0, 10500.0, 'the BATC spectrum'), '2400': (2300.0, 2450.0, 'the 13 cm band')}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8765, help='Local server port; 0 selects a free port')
-    parser.add_argument('--lnb-lo', type=float, default=9750.0, help='LNB oscillator in MHz (default: 9750)')
+    parser.add_argument('--band', choices=tuple(BANDS), default='qo100', help='qo100: QO-100 downlink (default); 2400: 13 cm received directly')
+    parser.add_argument('--lnb-lo', type=float, default=9750.0, help='LNB or downconverter oscillator in MHz (default: 9750; 0: none, tune the frequency as it is)')
     parser.add_argument('--lnb-correction', type=float, default=0.0, help='LNB error in MHz, added to the IF (e.g. 0.05 if the LNB runs 50 kHz high)')
     parser.add_argument('--gain', type=float, help='RTL-SDR RF gain in dB (default: the last choice on the page, else 40.2)')
     parser.add_argument('--tuner', choices=('rtlsdr', 'minitiouner', 'picotuner'), help='Use this receiver whatever is detected (testing)')
@@ -140,7 +143,10 @@ def serve(args, bin_dir, env):
     rf_input = args.rf_input or (saved_input if saved_input in RF_INPUTS else 'A')
     saved_gain = settings.get('gain')
     gain = args.gain if args.gain is not None else (saved_gain if isinstance(saved_gain, (int, float)) and 0 <= saved_gain <= 50 else 40.2)
-    backends = {'rtlsdr': RtlSdrBackend(bin_dir, args.lnb_lo, args.lnb_correction, gain)}
+    # RTL-SDR bias-T: remembered per band profile, so a 2.4 GHz converter's setting never reaches a QO-100 LNB chain
+    saved_bias = settings.get('bias_tee') if isinstance(settings.get('bias_tee'), dict) else {}
+    bias_tee = saved_bias.get(args.band) is True
+    backends = {'rtlsdr': RtlSdrBackend(bin_dir, args.lnb_lo, args.lnb_correction, gain, bias_tee)}
     for kind in ('minitiouner', 'picotuner'):
         backends[kind] = QocastBackend(kind, args.service_exe, args.service_port, args.ts_port, args.lnb_lo,
                                        args.lnb_correction, lnb_power, rf_input, logs, args.channel, args.ts_port2, args.primary_port)
@@ -273,6 +279,25 @@ def serve(args, bin_dir, env):
                 save_settings()
                 print('RF gain: %.1f dB' % applied, flush=True)
                 return self.reply(200, json.dumps({'gain': applied}).encode(), 'application/json')
+            if self.path == '/bias':             # RTL-SDR bias-T: used from the next tuning on
+                _, choice = devices()
+                if choice != 'rtlsdr':
+                    return self.reply(400, b'Only the RTL-SDR has a bias-T setting here.')
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 200:
+                        raise ValueError('bad size')
+                    wanted = json.loads(self.rfile.read(length))['on']
+                    if not isinstance(wanted, bool):
+                        raise ValueError('not a boolean')
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    return self.reply(400, b'Expected {"on": true or false}')
+                backends['rtlsdr'].bias_tee = wanted
+                saved = settings.get('bias_tee') if isinstance(settings.get('bias_tee'), dict) else {}
+                settings['bias_tee'] = {**saved, args.band: wanted}
+                save_settings()
+                print('Bias-T wanted: %s (%s)' % ('on' if wanted else 'off', args.band), flush=True)
+                return self.reply(200, json.dumps({'on': wanted}).encode(), 'application/json')
             if self.path == '/input':            # LNB voltage and RF input of a MiniTiouner / PicoTuner
                 _, choice = devices()
                 if choice not in ('minitiouner', 'picotuner'):
@@ -316,6 +341,7 @@ def serve(args, bin_dir, env):
                     'autotune': not args.no_autotune,          # the page tunes the beacon by itself once a receiver is chosen
                     'controls': {'lnb_power': backends[choice].lnb_power, 'rf_input': backends[choice].rf_input} if hardware and args.channel == 1 else None,
                     'gain': {'value': backends['rtlsdr'].gain, 'steps': RtlSdrBackend.GAIN_STEPS} if choice == 'rtlsdr' else None,
+                    'bias_tee': {'on': backends['rtlsdr'].bias_tee, 'band': args.band} if choice == 'rtlsdr' else None,
                     }).encode(), 'application/json')
             if url.path in STATIC:
                 name, ctype = STATIC[url.path]
@@ -329,8 +355,9 @@ def serve(args, bin_dir, env):
             query = parse_qs(url.query)
             try:
                 downlink, symbol_rate = float(query['freq'][0]), int(query['sr'][0])
-                if not 10490.0 <= downlink <= 10500.0:
-                    raise ValueError('Downlink must be within the BATC spectrum, 10490–10500 MHz')
+                low, high, name = BANDS[args.band]
+                if not low <= downlink <= high:
+                    raise ValueError('Frequency must be within %s, %g–%g MHz' % (name, low, high))
                 backend.check(downlink, symbol_rate)
             except (KeyError, IndexError):
                 return self.reply(400, b'Expected freq (downlink MHz) and sr (kS/s)')

@@ -87,6 +87,33 @@ class ConstellationScaler:
         return [(i / scale, q / scale) for i, q in batch]
 
 
+def set_rtl_bias_tee(bin_dir, on, index=0):
+    """Switch the RTL-SDR's bias-T (about 4.5 V on the antenna input, e.g. for a Nooelec Ham It Down) through the bundled
+    librtlsdr. rtl_iq does not do this itself; the setting stays when the stick is closed, so it is set just before rtl_iq
+    opens the stick. Raises OSError when the library or the stick cannot be used."""
+    import ctypes
+    path = Path(bin_dir) / 'librtlsdr.dll'
+    if hasattr(os, 'add_dll_directory'):
+        with os.add_dll_directory(str(Path(bin_dir).resolve())):    # libusb-1.0.dll sits next to it
+            library = ctypes.CDLL(str(path))
+    else:
+        library = ctypes.CDLL(str(path))
+    library.rtlsdr_open.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_uint32]
+    library.rtlsdr_open.restype = ctypes.c_int
+    library.rtlsdr_set_bias_tee.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    library.rtlsdr_set_bias_tee.restype = ctypes.c_int
+    library.rtlsdr_close.argtypes = [ctypes.c_void_p]
+    library.rtlsdr_close.restype = ctypes.c_int
+    device = ctypes.c_void_p()
+    if library.rtlsdr_open(ctypes.byref(device), index) or not device.value:
+        raise OSError('the RTL-SDR could not be opened to switch the bias-T')
+    try:
+        if library.rtlsdr_set_bias_tee(device, 1 if on else 0):
+            raise OSError('this RTL-SDR does not accept the bias-T command')
+    finally:
+        library.rtlsdr_close(device)
+
+
 class RtlSdrBackend:
     id = 'rtlsdr'
     reconnect = False
@@ -95,9 +122,11 @@ class RtlSdrBackend:
     GAIN_STEPS = (0.0, 0.9, 1.4, 2.7, 3.7, 7.7, 8.7, 12.5, 14.4, 15.7, 16.6, 19.7, 20.7, 22.9, 25.4, 28.0, 29.7,
                   32.8, 33.8, 36.4, 37.2, 38.6, 40.2, 42.1, 43.4, 43.9, 44.5, 48.0, 49.6)
 
-    def __init__(self, bin_dir, lnb_lo, lnb_correction, gain):
+    def __init__(self, bin_dir, lnb_lo, lnb_correction, gain, bias_tee=False):
         self.bin_dir, self.lnb_lo, self.lnb_correction = bin_dir, lnb_lo, lnb_correction
         self.gain = self.snap_gain(gain)
+        self.bias_tee = bool(bias_tee)          # wanted: used from the next tuning on
+        self.bias_applied = False               # what was last switched on the stick
 
     @classmethod
     def snap_gain(cls, value):
@@ -109,7 +138,8 @@ class RtlSdrBackend:
         if not 25 <= symbol_rate <= self.max_symbol_rate:
             raise ValueError('Symbol rate must be 25–%d kS/s' % self.max_symbol_rate)
         if not 24 <= if_mhz <= 1766:
-            raise ValueError('IF %.3f MHz is outside the stick range 24–1766 MHz' % if_mhz)
+            raise ValueError('IF %.3f MHz is outside the stick range 24–1766 MHz: check the LNB / downconverter LO '
+                             'on the Setup page (%g MHz now)' % (if_mhz, self.lnb_lo))
         return if_mhz
 
     def open(self, ctx, downlink_mhz, symbol_rate):
@@ -117,6 +147,7 @@ class RtlSdrBackend:
         for name in ('rtl_iq.exe', 'datvrx.exe', 'librtlsdr.dll'):
             if not (self.bin_dir / name).is_file():
                 raise ValueError('The RTL-SDR runtime is incomplete: missing ' + name)
+        self.apply_bias_tee()
         rate = 2560000 if symbol_rate >= 1250 else 2400000
         source = ctx.start([str(self.bin_dir / 'rtl_iq.exe'), str(round(if_mhz * 1e6)), str(rate), str(self.gain),
                             '--watch-stdin'], 'radio', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -131,8 +162,26 @@ class RtlSdrBackend:
         print('Tuned: IF %.6f MHz, %d kS/s' % (if_mhz, symbol_rate), flush=True)
         return ProcessSource(transport)
 
+    def apply_bias_tee(self):
+        """Put the wanted bias-T state on the stick (before rtl_iq opens it). Failing to switch it ON stops the tuning, so a
+        converter that needs it is never left unpowered silently; failing to switch it off is only reported."""
+        if not self.bias_tee and not self.bias_applied:
+            return                              # never switched on by us: nothing to do
+        try:
+            set_rtl_bias_tee(self.bin_dir, self.bias_tee)
+        except OSError as error:
+            if self.bias_tee:
+                raise ValueError('Bias-T not switched on: %s' % error)
+            print('Bias-T not switched off:', error, flush=True)
+            return
+        self.bias_applied = self.bias_tee
+        print('Bias-T %s' % ('on' if self.bias_tee else 'off'), flush=True)
+
     def shutdown(self):
-        pass
+        """The receiver closes: no voltage left on the antenna input."""
+        if self.bias_applied:
+            self.bias_tee = False
+            self.apply_bias_tee()
 
 
 class ReplayBackend:
@@ -170,6 +219,8 @@ class QocastBackend:
         self.api_port, self.ts_port = api_port, ts_port
         self.lnb_lo, self.lnb_correction, self.lnb_power = lnb_lo, lnb_correction, lnb_power
         self.rf_input = 'A' if kind == 'picotuner' else rf_input      # a PicoTuner has no input to choose
+        if self.lnb_lo == 0:
+            self.lnb_power = 'off'                                    # direct mode: no LNB to power
         self.config_dir = config_dir
         self.service = None
 
@@ -191,9 +242,23 @@ class QocastBackend:
         except (urllib.error.URLError, OSError, ValueError) as error:
             raise ConnectionError(str(error))
 
+    MIN_IF_MHZ, MAX_IF_MHZ = 144.0, 2450.0     # the tuner service's own limits (ReceiverService.MinIfKhz / MaxIfKhz)
+
+    @property
+    def direct(self):
+        """LO 0: no LNB or converter. The tuner service then tunes the frequency as it is and keeps the LNB supply off."""
+        return self.lnb_lo == 0
+
+    def if_mhz(self, rf_mhz):
+        return rf_mhz - self.lnb_lo + self.lnb_correction
+
     def check(self, downlink_mhz, symbol_rate):
         if not 1 <= symbol_rate <= self.max_symbol_rate:
             raise ValueError('Symbol rate must be 1–%d kS/s' % self.max_symbol_rate)
+        if_mhz = self.if_mhz(downlink_mhz)
+        if not self.MIN_IF_MHZ <= if_mhz <= self.MAX_IF_MHZ:
+            raise ValueError('IF %.3f MHz is outside the tuner range %g–%g MHz: check the LNB / downconverter LO on the '
+                             'Setup page (%g MHz now)' % (if_mhz, self.MIN_IF_MHZ, self.MAX_IF_MHZ, self.lnb_lo))
         return None
 
     def ensure_service(self):
@@ -221,8 +286,9 @@ class QocastBackend:
                                  '--service-exe.' % (self.service_exe or 'no path'))
             config = self.config_dir / 'tuner-service.json'
             config.write_text(json.dumps({
-                'receiver_type': self.id, 'lnb_offset_khz': round((self.lnb_lo - self.lnb_correction) * 1000),
-                'rf_input': self.rf_input, 'lnb_power': self.lnb_power, 'control_port': self.api_port,
+                # direct mode ignores the offset; a valid LNB value is written anyway for the service's own checks
+                'receiver_type': self.id, 'lnb_offset_khz': 9750000 if self.direct else round((self.lnb_lo - self.lnb_correction) * 1000),
+                'rf_input': self.rf_input, 'lnb_power': 'off' if self.direct else self.lnb_power, 'control_port': self.api_port,
                 'muted': True, 'always_on_top': False}, indent=2), encoding='utf-8')
             self.service = subprocess.Popen([str(self.service_exe), '--config', str(config), '--parent', str(os.getpid()),
                                             '--ts-udp', str(self.ts_port), '--ts-udp2', str(self.ts_port2)], cwd=str(self.service_exe.parent),
@@ -251,8 +317,10 @@ class QocastBackend:
                 raise ValueError('The tuner service cannot open the tuner. Is it plugged in, and not used by another program?')
             source = UdpSource(self.ts_port)                  # before tuning, so no data is missed
             ctx.on_close.append(source.close)
-            self.api('POST', 'tune', {'request_id': uuid.uuid4().hex, 'tuner': self.channel, 'direct': False,
-                                      'frequency_khz': round(downlink_mhz * 1000), 'symbol_rate_ksps': symbol_rate})
+            # direct: the service tunes frequency_khz as it is, so the correction is applied here (IF = RF + correction)
+            frequency = self.if_mhz(downlink_mhz) if self.direct else downlink_mhz
+            self.api('POST', 'tune', {'request_id': uuid.uuid4().hex, 'tuner': self.channel, 'direct': self.direct,
+                                      'frequency_khz': round(frequency * 1000), 'symbol_rate_ksps': symbol_rate})
         except ConnectionError as error:
             raise ValueError('The tuner service stopped answering: %s' % error)
         except OSError as error:                              # the UDP port is taken (another session or program)
@@ -288,6 +356,8 @@ class QocastBackend:
             return                                            # shared with the first tuner: set there
         if self.id == 'picotuner':
             rf_input = 'A'
+        if self.direct:
+            lnb_power = 'off'                                 # no LNB: never put 13 / 18 V on an antenna or preamp
         changed = (lnb_power, rf_input) != (self.lnb_power, self.rf_input)
         self.lnb_power, self.rf_input = lnb_power, rf_input
         if not changed:

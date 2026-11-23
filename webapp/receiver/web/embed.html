@@ -10,8 +10,9 @@ html,body{margin:0;height:100%;background:#000;color:#e1e9ee;font:13px system-ui
 #top.open{display:flex}
 #top select{background:#15232e;color:#e1e9ee;border:1px solid #2b4558;border-radius:8px;padding:3px 8px;font:inherit;cursor:pointer}
 #tuner:disabled{opacity:1;color:#e1e9ee;background:transparent;border-color:transparent;-webkit-appearance:none;appearance:none;cursor:default;font-weight:600}
-#lnbBox,#gainBox,#rfBox{display:flex;align-items:center;gap:6px}
-#lnbBox[hidden],#gainBox[hidden],#rfBox[hidden]{display:none}
+#lnbBox,#gainBox,#rfBox,#biasBox{display:flex;align-items:center;gap:6px}
+#lnbBox[hidden],#gainBox[hidden],#rfBox[hidden],#biasBox[hidden]{display:none}
+#biasBox input:checked+span{color:#ffb84d;font-weight:600}
 #gain{width:90px}
 #gainVal{min-width:4.2em;color:#e1e9ee}
 video{width:100%;height:100%;background:#000;display:block;object-fit:contain}
@@ -38,7 +39,8 @@ video.signal-lost{filter:brightness(.4)}
 <div id="top"><label for="tuner">Receiver</label><select id="tuner" aria-label="Receiver"></select>
 <span id="lnbBox" hidden><label for="lnb">LNB power</label><select id="lnb" title="Voltage sent up the coax to the LNB"><option value="off">LNB off</option><option value="vertical">LNB vertical</option><option value="horizontal">LNB horizontal</option></select>
 <span id="rfBox"><label for="rfin">Input</label><select id="rfin" title="Which RF input of the receiver is used"><option value="A">Input A</option><option value="B">Input B</option></select></span></span>
-<span id="gainBox" hidden><label for="gain">RF gain</label><input id="gain" type="range" min="0" max="28" step="1" value="22" aria-label="RF gain"><span id="gainVal"></span></span></div>
+<span id="gainBox" hidden><label for="gain">RF gain</label><input id="gain" type="range" min="0" max="28" step="1" value="22" aria-label="RF gain"><span id="gainVal"></span></span>
+<label id="biasBox" hidden title="About 4.5 V on the RTL-SDR antenna input, e.g. to power a Nooelec Ham It Down. Do not also power that converter by USB, and never use it into an LNB or splitter that already carries voltage."><input id="bias" type="checkbox"><span>Bias-T</span></label></div>
 <video id="video" playsinline></video>
 <div id="sound"><input id="volume" type="range" min="0" max="1" step="0.05" value="1" title="Volume" aria-label="Volume"><button id="mute" title="Mute / unmute" aria-label="Mute / unmute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor"/><g class="waves"><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></g><g class="cross"><path d="M16 9.5l5 5M21 9.5l-5 5" stroke="#ff6b6b"/></g></svg></button></div>
 <div id="call" hidden><b id="callnum"></b><span id="calltext"></span></div>
@@ -190,6 +192,8 @@ async function loadDevices(){
    el('rfBox').hidden=d.selected==='picotuner';
    // RF gain exists only on the RTL-SDR (a MiniTiouner / PicoTuner has its own AGC)
    el('gainBox').hidden=!d.gain;
+   el('biasBox').hidden=!d.bias_tee;
+   if(d.bias_tee)el('bias').checked=d.bias_tee.on;
    if(d.gain){gainSteps=d.gain.steps;el('gain').max=gainSteps.length-1;el('gain').value=gainSteps.indexOf(d.gain.value);showGain();}
    // Nothing tuned yet and a receiver is chosen (at the start, or after choosing another): the QO-100 beacon
    if(d.selected&&pendingSignal){const p=pendingSignal;pendingSignal=null;tune(p);}
@@ -228,6 +232,16 @@ async function postGain(index){
 el('gain').oninput=showGain;
 el('gain').onchange=async()=>{
  try{await postGain(Number(el('gain').value));}catch(e){status.textContent='Gain not changed: '+e.message;return;}
+ if(live&&tuned)tune(tuned);
+};
+// Bias-T (RTL-SDR): switched on the stick when it is next opened, so a change retunes.
+el('bias').onchange=async()=>{
+ const on=el('bias').checked;
+ try{
+  const answer=await fetch('/bias',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on})});
+  if(!answer.ok)throw Error(await answer.text());
+ }catch(e){el('bias').checked=!on;status.textContent='Bias-T not changed: '+e.message;return;}
+ status.textContent='Bias-T '+(on?'on':'off')+(live&&tuned?' — the receiver tunes again…':' from the next tuning');
  if(live&&tuned)tune(tuned);
 };
 loadDevices();setInterval(loadDevices,4000);
