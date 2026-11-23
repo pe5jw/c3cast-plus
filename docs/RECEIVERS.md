@@ -1,7 +1,29 @@
 # Integrated receivers
 
-The existing transmit console is retained. RX 1 and RX 2 sit beneath it, before
+The existing transmit console is retained. RX 1 and RX 2 (and RX 3 in C3CAST-plus) sit beneath it, before
 Telemetry. They work without an ESP32 connected and independently of TX.
+
+## C3CAST-plus additions
+
+- **Supported receivers:** MiniTiouner, PicoTuner, RTL-SDR and HackRF One (USB 1D50:6089). One RTL-SDR and one HackRF at a time.
+- **Assignment (Setup page, Receivers):** each of RX 1..RX 3 is *Automatic*, *Not used* or pinned to a tuner key
+  (`minitiouner:<serial>`, `picotuner:1`, `picotuner:2`, `rtlsdr`, `hackrf`), saved in `config.json` as `rx_assign`.
+  Automatic receivers take, in receiver order, the detected tuners nobody pinned (order: MiniTiouners by serial,
+  PicoTuner channel 1/2, RTL-SDR, HackRF). RX 3 is *Not used* by default; otherwise the page shows a third panel.
+  **Rescan USB** stops the receivers and lists the tuners again (a tuner a receiver or another program holds is not listed).
+- **Band profile and conversion (Setup page):** `profile` (`qo100` or `2400`) and `rx_offsets` (LO and correction in MHz per profile
+  and per kind: `rtlsdr`, `nim`, `hackrf`). Each worker gets `--band`, `--lnb-lo` and `--lnb-correction`; the receiver tunes
+  IF = RF - LO + correction. In the `2400` profile the workers start with `--no-autotune` (no beacon) and accept 2300-2450 MHz.
+- **LO 0 on a MiniTiouner / PicoTuner** tunes in the tuner service's direct mode (IF 144-2450 MHz), the correction applied by the
+  web player, LNB supply forced off.
+- **RTL-SDR bias-T:** switched through librtlsdr (`rtlsdr_set_bias_tee`) just before `rtl_iq` opens the stick; remembered per profile
+  in the receiver's `settings.json`; switched off when the worker closes.
+- **HackRF:** `hackrf_iq` -> `datvrx --format cs8`. Tuned 0.75 x SR above the carrier (DC spike outside the signal),
+  `--carrier -offset`, sample rate max(2 Msps, 5 x SR). LNA / VGA / amp saved once, antenna power per profile.
+- **Always quit with END.** A worker that is not shut down can leave its tuner service running and holding the MiniTiouner.
+
+The sections below describe the original C3CAST receivers; where they disagree with this list (for example "restart after
+changing an existing assignment", or the beacon at start-up), the list above is what C3CAST-plus does.
 
 ## Running from source
 

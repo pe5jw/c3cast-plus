@@ -4,6 +4,21 @@ The version lives in `webapp/version.py` (shown on the page, the setup page and 
 Version 1.0.0 is the first stable release. Subsequent features increment the minor
 version; fixes increment the patch version. Versions 0.1 to 0.4 were internal development versions.
 
+## C3CAST-plus (PE5JW, 2026-11-23, based on C3CAST 1.0.1)
+C3CAST-plus is PE5JW's extended version of C3CAST; the app still reports version 1.0.1. See the README for why each change was made.
+- **Band profiles** - QO-100 (as before) or 2.4 GHz direct: no BATC spectrum, beacon or slot grid; receive your own signal on 13 cm.
+- **Adjustable LO and correction** - per profile and per kind of receiver (RTL-SDR, MiniTiouner/PicoTuner, HackRF), for other LNBs
+  and for downconverters such as the Nooelec Ham It Down (LO 1500). A LO a receiver cannot tune is refused on saving.
+- **MiniTiouner direct mode** - LO 0 uses the tuner service's direct mode on 2.4 GHz; the LNB supply is then always off.
+- **RTL-SDR bias-T switch** - in the receiver's Settings bar, remembered per profile, off by default and on closing.
+- **HackRF One receiver** - new `hackrf_iq.exe` (binary-safe; `hackrf_transfer -r -` corrupts the stream on Windows), tuned beside
+  the DC spike, with LNA / VGA gain, RF amp and antenna power settings.
+- **Receiver assignment** - each receiver Automatic, Not used or pinned to one tuner on the Setup page; Rescan USB without restarting.
+- **Receiver 3** - optional third receiver panel.
+- **A receive row per receiver** in the 2.4 GHz profile: frequency, symbol rate, = TX, Tune Receiver N.
+- **Fixed** - the settings bar of the receiver hid the bias-T and HackRF switches (all its labels were hidden).
+- **Build** - `build_portable.py --dev` for a local test build; a dev folder still in use gives a clear message.
+
 ## 1.0.1 (2026-11-10)
 - **OBS Virtual Camera with a separate audio input** - a camera without its own microphone combined with another audio device
   (for example a VB-Audio cable) no longer sends an empty picture. Reported by F1JMJ.

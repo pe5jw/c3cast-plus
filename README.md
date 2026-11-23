@@ -1,192 +1,203 @@
-# <img src="docs/logo.png" height="44" align="absmiddle" alt=""> C3CAST
+# <img src="docs/logo.png" height="44" align="absmiddle" alt=""> C3CAST-plus
 
-### The 5 EUR DATV modulator
+### C3CAST with direct 13 cm reception, adjustable LNB / converter LOs, a HackRF receiver and up to three receivers
 
-**Plug. Flash. Play.** A small web console for DVB-S2 amateur TV from a low-cost ESP32-C3 board. **Windows 10/11.**
+**C3CAST-plus** is PE5JW's extended version of **[C3CAST](https://github.com/HB9IIU/C3CAST) by HB9IIU**, the
+"5 EUR DATV modulator" that turns a Seeed Studio XIAO ESP32-C3 into a DVB-S2 transmitter on 13 cm with
+**[ESP32-DATV](https://github.com/SP8ESA/ESP32-DATV) firmware by Kacper SP8ESA**. Everything C3CAST does still works the same
+way. C3CAST-plus adds what was needed to **receive your own C3CAST signal directly on 2.4 GHz, without the QO-100 satellite**,
+with whatever receivers are on the bench.
 
-**New in 1.0.0: integrated DATV reception with RTL-SDR USB sticks!** Watch up to two signals using RTL-SDR, MiniTiouner or PicoTuner receivers.
-
-The board costs about 5 EUR. To get on the air via QO-100 you also need RF output filtering, an amplifier and a 2.4 GHz dish: see [Please read before transmitting](#please-read-before-transmitting).
-
-<p align="center">
-  <a href="https://youtu.be/eaLuslmMdow">
-    <img src="https://i.ytimg.com/vi/eaLuslmMdow/hqdefault.jpg" alt="C3CAST demo video" width="640">
-  </a>
-  <br>
-  <b>&#9654; Press to play the demo video</b>
-</p>
-
-<h1 align="center"><a href="https://github.com/HB9IIU/C3CAST/releases/latest">&#11015; Download C3CAST for Windows</a></h1>
-<p align="center">Windows 10/11 &nbsp;·&nbsp; no installation &nbsp;·&nbsp; unzip and double-click</p>
-
-C3CAST is a simple helper around the excellent **[ESP32-DATV](https://github.com/SP8ESA/ESP32-DATV)** firmware by
-**Kacper SP8ESA**. His firmware does the real work: it turns the ESP32-C3's own Wi-Fi radio into a DVB-S / DVB-S2
-transmitter on 13 cm. Please read his project for how it works, its measurements and its limits; this page does not repeat them.
-
-# 🔌 PLUG &nbsp;·&nbsp; ⚡ FLASH &nbsp;·&nbsp; ▶ PLAY
-
-C3CAST only wraps it for a **Seeed Studio XIAO ESP32-C3** so that a ham can get on the air without a toolchain:
-
-1. **Plug** the XIAO into a USB port (the native USB port, no extra adapter).
-2. **Flash** it from the page: one button, two clicks, about 30 seconds. A brand-new blank board works too.
-3. **Play**: pick a picture, the SBB clock card or a USB camera, choose symbol rate and FEC, press **Start**.
-
-by HB9IIU
+> C3CAST-plus is not an official HB9IIU release. Please report problems with the features below here, not to HB9IIU or SP8ESA.
+> The page still shows "C3CAST v1.0.1 by HB9IIU": the upstream version it is based on.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="C3CAST 1.0.0 with the live QO-100 spectrum, transmit controls, two received DATV pictures, magic eyes and CPU-load meter" width="1100">
-  <br><em>C3CAST 1.0.0 with two live receivers.</em>
+  <img src="docs/plus/three-receivers.jpg" alt="Three receivers decoding the same C3CAST signal on 2405 MHz: an RTL-SDR with a Nooelec Ham It Down, a HackRF One and a MiniTiouner Express" width="1100">
+  <br><em>One C3CAST transmission at 2405.000 MHz, 500 kS/s, QPSK 3/4, received at the same time by
+  an RTL-SDR with a Nooelec Ham It Down (RX1), a HackRF One (RX2) and a MiniTiouner Express (RX3).</em>
 </p>
 
-## The board
+## Why C3CAST-plus?
 
-<img src="docs/board-pic.png" alt="Seeed Studio XIAO ESP32-C3" width="200" align="right">
+C3CAST is built for QO-100. Its receivers expect the satellite downlink: they take their frequencies from the BATC wideband
+spectrum, start on the beacon, and assume a standard 9750 MHz LNB. That is right on the air, but it gets in the way when you want to:
 
-The whole modulator is one **[Seeed Studio XIAO ESP32-C3](https://www.seeedstudio.com/Seeed-XIAO-ESP32C3-p-5431.html)**, a
-thumb-sized board that costs about 5 EUR / USD (Seeed lists it at $4.90; shop and shipping change that).
+- **check your own signal on the bench**, straight from the board's antenna or through an attenuator, before going near the satellite;
+- **use a different LNB** (a modified or PLL LNB with another local oscillator) or a **downconverter** in front of an RTL-SDR;
+- **use the receivers you have**: an RTL-SDR with a Nooelec Ham It Down, a MiniTiouner Express that tunes 2.4 GHz directly, a HackRF;
+- **decide which receiver gets which panel**, and watch with **three** receivers at once.
 
-- **Chip:** ESP32-C3, RISC-V at 160 MHz, 4 MB flash, 320 KB RAM, 2.4 GHz Wi-Fi and Bluetooth LE.
-- **USB-C:** the chip's *native* USB. It is the only cable you need: the PC sends the symbols over it and C3CAST flashes through it.
-- **U.FL connector** (bottom centre): the RF output. Use a small antenna, or a dummy load / attenuator for bench tests.
-- **B / R buttons:** boot and reset. Flashing resets the board over USB by itself; if a board is ever not found, hold **B** while
-  plugging it in to force download mode.
-- **Pin D10:** the PTT output of C3CAST (high while transmitting). D9 is the boot button: do not pull it low at power-up.
+## What changed, and why
 
-The RF is produced by the chip's own Wi-Fi radio, driven by SP8ESA's firmware; there is no other RF hardware on the board. C3CAST is
-built and tested on this XIAO. SP8ESA's own project uses an ESP32-C3 SuperMini.
+### 1. Two band profiles: QO-100 and 2.4 GHz direct
 
-## What you get
+The **Setup** page has a new *Band profile & receivers* section.
 
-- **Flash button**: installs the firmware (SP8ESA's, with the PTT pin moved to D10) over the same USB cable. It only flashes the
-  board you pick and confirm. No Arduino IDE, no PlatformIO needed to use it.
-- **Three sources**: a PNG/JPG picture, a live **SBB station-clock test card**, or a **USB camera** with callsign, UTC time and a
-  scrolling marquee on the picture.
-- **Frequency**: click a free slot on the **live QO-100 wideband spectrum** (the BATC feed) or just type it
-  (2300 to 2450 MHz, always possible, also offline and for bench tests). The page shows the downlink slot and whether it *looks* free on the live spectrum. That is only a hint: always listen first.
-- **Link settings**: DVB-S2 QPSK, symbol rates 125 / 250 / 333 / 500 / 1000 kS/s, FEC 1/2, 3/5, 2/3, 3/4 or 4/5, output level with limits you set yourself ([what that means](#output-level)).
-- **Video settings are automatic**: picture size, bitrate and audio follow the symbol rate (H.265 and AAC-LC, the same
-  strategy as QOCAST). It uses the NVIDIA GPU encoder when there is one, otherwise software encoding. You never set video parameters yourself.
-- **PTT output on D10**: high while RF is on, low otherwise; to key a relay or an amplifier through its own driver.
-- **Finds the board by itself** (and remembers it), shows UTC, runs offline (no internet needed), one Start/Stop button.
+- **QO-100** works exactly as in C3CAST: uplink slots, beacon, BATC spectrum, the downlink shown next to the uplink.
+- **2.4 GHz direct** removes everything that only makes sense via the satellite: no BATC spectrum, no beacon, no slot grid,
+  no uplink/downlink offset. The transmit frequency stays free within 2300 to 2450 MHz, and the receivers listen on 13 cm themselves.
 
-## Quick start (Windows)
+<p align="center"><img src="docs/plus/profile-2400.jpg" alt="The Link panel in the 2.4 GHz direct profile: a receive row per receiver" width="900"></p>
 
-No installation, no Python, no drivers to set up:
+In the 2.4 GHz profile there is no spectrum to click, so **each receiver has its own receive row**: frequency, symbol rate,
+**= TX** (copy the transmit settings) and **Tune Receiver N**, marked with the receiver's colour. As before, receiver 1 follows
+your own transmission by itself when you go on air.
 
-1. Download the portable package **C3CAST-Portable-x64** (the `.zip` on the [Releases page](https://github.com/HB9IIU/C3CAST/releases/latest)) and unzip it anywhere.
-2. Double-click **C3CAST.exe**. A small window opens (close it to quit) and your browser shows the page.
-3. Plug in the XIAO. If the page does not say *board connected*, press **Flash**.
-4. **Set up once** on the **Setup** page: callsign and locator.
-5. **Choose a source**: a picture, the SBB clock card or a USB camera.
-6. **Choose frequency, symbol rate and FEC.** Click a slot on the spectrum or type the frequency. Start at a low output level.
-7. Press **Start**, then check your spectrum and the picture on a receiver. **Stop** ends the transmission, **END** closes the app.
+### 2. An adjustable LO and correction, per profile and per kind of receiver
 
-Start on a dummy load or an attenuator first.
+C3CAST had the 9750 MHz LNB fixed in the receivers. C3CAST-plus lets you set the oscillator of whatever sits in front of each
+kind of receiver, separately for each profile:
 
-Your own pictures go in the `pictures` folder next to the exe, your settings are saved in `config.json` there, and callsign, locator
-and clock lead time are on the **Setup** page.
+<p align="center"><img src="docs/plus/band-settings.jpg" alt="Band profile and receiver conversion settings" width="760"></p>
 
-## Please read before transmitting
+The receiver tunes **IF = RF − LO + correction** (MHz). Examples:
 
-- **Licensed radio amateurs only.** You are responsible for the frequency, power and bandwidth you use.
-- **For on-air operation, use suitable RF output filtering and verify the transmitted spectrum**, as recommended by SP8ESA.
-  See the [upstream project for measurements](https://github.com/SP8ESA/ESP32-DATV#spectra). Start bench tests with a dummy load or attenuator.
-- C3CAST is made for experiments, not for calibrated power: see *Output level* below.
+| What is in front of the receiver | LO | Typical use |
+|---|---|---|
+| Standard universal LNB | 9750 | QO-100 (the default, as in C3CAST) |
+| Modified or PLL LNB | e.g. 9739, or its own value | QO-100 with another LNB |
+| Nooelec Ham It Down (1.5 GHz LO) | 1500 | 2.4 GHz with an RTL-SDR (2405 MHz becomes about 905 MHz) |
+| Nothing | 0 | 2.4 GHz with a MiniTiouner or a HackRF |
 
-### Output level
+The correction takes the converter's own error, for example 0.05 if it runs 50 kHz high. A value that would put the band outside
+what that receiver can tune is refused when you save, with a message saying why, so a wrong LO shows up on the Setup page and not
+as a silent failure later. Changing these settings restarts the receivers (not allowed while transmitting).
 
-The Level slider starts at your **lowest** configured level and runs up to your **highest** level. Press **Start** to transmit and **Stop** to end transmission.
-You set both with the **Limits** button next to the Level slider: drag two handles on one track (1 to 480; the default is 15 to 100). This is a digital amplitude setting,
-**not calibrated power**: start low and check your own spectrum before raising it. The slider returns to your configured minimum whenever
-transmission stops. Transmission always requires pressing Start.
+### 3. MiniTiouner direct on 2.4 GHz
 
-**Very low levels** (below about 15) show a spike in the middle of the signal, the board's own carrier leakage. For less power,
-keep the level at 15 or more and use an attenuator after the board. **High levels** (above about 250) distort the signal.
-HB9IIU measured one board: the output follows the setting closely up to about 100, compresses above about 250 (which usually means
-more distortion), and is unreliable below about 15.
+With LO 0 the MiniTiouner (and PicoTuner) use the **direct mode** that the bundled tuner service already had (QOCAST's "local
+mode"): the frequency goes to the tuner as it is. In that mode the **LNB supply is always off**, even if it is switched on in the
+receiver's settings, so no 13 or 18 V ever reaches an antenna or a preamplifier.
 
-<p align="center"><img src="docs/output_level.png" alt="Output level versus measured output" width="720"></p>
+### 4. RTL-SDR bias-T switch
 
-The plot shows the firmware's whole range (1 to 480), which the measurements covered. The instrument and its settings were not recorded, so treat the numbers as indicative. The full table is in
-[docs/BUILD_AND_TEST_NOTES.md](docs/BUILD_AND_TEST_NOTES.md).
+A Ham It Down (or a small preamp) can be powered through the coax. The RTL-SDR's bias-T is now a switch in the receiver's
+**Settings** bar, next to RF gain:
 
-## Video files and experimental H.266 / VVC
+<p align="center"><img src="docs/plus/rtl-sdr-bias-t.jpg" alt="RTL-SDR settings bar with RF gain and the Bias-T switch" width="400"></p>
 
-**Video:** put MP4, MKV, MOV, AVI, WebM, TS or M4V files in the `videos` folder next to C3CAST.exe (from source: `webapp/videos`),
-choose **Video** and press Reload. The selected file loops until Stop, with its soundtrack, or silence if it has none.
-Two sample films are included: an excerpt of *Big Buck Bunny* and the *Sintel* trailer, (c) Blender Foundation, CC BY 3.0
-(see `videos/CREDITS.txt`). The muted browser preview depends on the browser's codec support; transmission uses ffmpeg's decoders.
-Almost any video works. **Best:** MP4 with H.264 or H.265 and AAC sound, 16:9, 1280x720 or smaller, 25 or 30 frames per second.
-C3CAST describes the chosen file under its name, warns when it is too large for your PC to decode live (bigger than 1080p, or above
-30 fps), and the **i** button shows how to prepare a file with the ffmpeg that comes in the package.
+- It is remembered **per band profile**, and is off by default, so switching it on for a 2.4 GHz converter never puts voltage
+  on a QO-100 LNB chain.
+- `rtl_iq` cannot switch it, so C3CAST switches it through the bundled `librtlsdr` just before `rtl_iq` opens the stick, and
+  switches it off again when the receiver closes.
+- If it cannot be switched on, tuning stops with a message, so a converter that needs it is never left unpowered without you knowing.
 
-<p align="center"><a href="https://www.hhi.fraunhofer.de/en/departments/vca/technologies-and-solutions/h266-vvc.html"><img src="webapp/static/vvc-logo.jpg" width="160" alt="VVC logo"></a><br>
-<sub>VVC logo (c) Fraunhofer HHI, shown only to identify the video format. No endorsement by Fraunhofer is implied.
-<a href="https://www.hhi.fraunhofer.de/en/departments/vca/technologies-and-solutions/h266-vvc.html">About H.266 / VVC</a></sub></p>
+### 5. HackRF One as a receiver
 
-> **⚠ Most DATV viewers cannot decode H.266.** They will see no picture. Use this mode only for tests with stations that have agreed to take part, and switch back to H.265 for normal operation. C3CAST asks you to confirm before it transmits in H.266.
+The HackRF covers 1 MHz to 6 GHz, so it receives 2.4 GHz directly (LO 0) and works behind a QO-100 LNB as well.
 
-The **H.266 / VVC** switch is off whenever the console opens, and its "i" button explains the mode in plain language. H.265 stays
-the normal mode, with the same automatic GPU or software selection as before. H.266 uses the CPU through ffmpeg's `libvvenc`
-encoder, so it may take several seconds to produce a picture, and the larger profiles may not keep up in real time. Picture size
-and frame rate follow the existing profiles; a first [benchmark on an i5-11600K](docs/H266_BENCHMARK_2026-10-29.md) found the
-higher-resolution H.266 profiles too slow. Audio stays AAC-LC, and the transport stream and radio settings stay the same.
-It has been tested only briefly on air by HB9IIU; more testing by other users is welcome.
+- **A new reader, `hackrf_iq.exe`.** `hackrf_transfer -r -` cannot be used in a pipe on Windows: it leaves standard output
+  in text mode, so every 0x0A byte of the I/Q stream gains a 0x0D and the stream is corrupted. `hackrf_iq` is a small C program
+  modelled on DATVision's `rtl_iq`: binary standard output, signed 8-bit I/Q into `datvrx --format cs8`, and a clean stop
+  (streaming stopped, antenna power off, HackRF closed) when C3CAST closes the pipe.
+- **Away from the DC spike.** A HackRF is a zero-IF receiver with a spike at its centre frequency. It is tuned 0.75 times the
+  symbol rate above the carrier, so the whole DVB-S2 signal lies beside the spike, and `datvrx --carrier` decodes it there.
+  The sample rate is 5 times the symbol rate, at least 2 Msps.
+- **Settings:** LNA gain (0 to 40 dB), VGA gain (0 to 62 dB), the +14 dB RF amp and antenna power (per band profile, off by
+  default) in the receiver's Settings bar. Detected as USB 1D50:6089.
+- **Build:** libhackrf 2026.01.3 is linked into the exe, against the `libusb-1.0.dll` and `libwinpthread-1.dll` already in the
+  package. `webapp/receiver/hackrf-iq/build.sh` rebuilds it on Linux with Zig's C compiler; source and licences are in the repository.
 
-To watch H.266, VLC 3 and QOCAST's normal Player are not enough. The package includes the **HB9IIU Experimental H.266 Player**
-(folder `H266-Player`, start it with the **Player** button at the top of the page or by double-clicking its exe). It receives with a
-MiniTiouner or a USB PicoTuner, shows the live QO-100 spectrum, and decodes H.265, H.264 and H.266 with its own ffplay. It is
-optional: delete the folder and the button disappears, and Open Tuner or any other receiver keeps working as before. A recent ffplay
-with VVC decoding (ffmpeg 7.1 or newer) also works, and you should always check your receiving chain.
-Developer tests are in [docs/H266_TESTING.md](docs/H266_TESTING.md).
+### 6. Choose which receiver gets which tuner, Rescan, and an optional RX3
 
-## Bench test
+C3CAST gave the first two detected tuners to RX1 and RX2, in a fixed order, and only looked once at startup.
 
-No spectrum analyser? HB9IIU's **[Pocket QO-100 Spectrum Viewer](https://github.com/HB9IIU/ESP32-CYD-pocket-qo-100-spectrum-viewer)** shows
-C3CAST's signal as a TX slot: a receive-only *"is it transmitting?"* indicator, not a measurement. Never connect the transmitter output
-directly to it.
+<p align="center"><img src="docs/plus/receiver-assignment.png" alt="Receiver assignment on the Setup page" width="760"></p>
+
+- Each receiver is **Automatic**, **Not used**, or **pinned** to one tuner (a MiniTiouner by its serial number, PicoTuner
+  channel 1 or 2, the RTL-SDR, the HackRF). A pinned tuner is never taken by an automatic receiver.
+- **Rescan USB** releases the receivers and lists the tuners again, without restarting C3CAST.
+- **Receiver 3** is off by default. Set it to anything but "Not used" and a third, orange panel appears.
+- PicoTuner channel 2 shares the tuner service of whichever receiver has channel 1, no longer only RX1.
+
+### 7. Smaller things
+
+- `tools/build_portable.py --dev` makes a local test build that only needs `tools/ffmpeg/bin/ffmpeg.exe`: release-only files
+  (ffmpeg licences and source, sample videos, release notes) are skipped when missing, and no zip is made. Never hand a `--dev`
+  build to anyone. The release build is unchanged.
+- When the previous dev folder is still in use, the build says so in one line instead of a traceback.
+
+## Getting started
+
+There is no C3CAST-plus download yet: build it yourself on Windows 10/11 (Python 3.11).
+
+```powershell
+git clone https://github.com/pe5jw/c3cast-plus.git
+cd c3cast-plus
+py -3.11 -m venv .venv-host
+.venv-host\Scripts\python.exe -m pip install -r webapp\requirements.txt pyinstaller
+# copy the folder tools\ffmpeg from an official C3CAST portable package to tools\ffmpeg here
+.venv-host\Scripts\python.exe tools\build_portable.py --dev
+```
+
+Start `dist\C3CAST-Portable-x64-1.0.1-dev\C3CAST.exe`. Or, without building, run it from source:
+`.venv-host\Scripts\python.exe webapp\c3cast.py`.
+
+Then, on the **Setup** page:
+
+1. Callsign and locator, as in C3CAST.
+2. **Band profile**: QO-100, or 2.4 GHz direct.
+3. **Receiver conversion**: check the LO of each kind of receiver you use (the defaults are in the table above).
+4. **Receivers**: leave them on Automatic, or pin each tuner to the receiver you want. Press Rescan after plugging something in.
+
+Everything else (the board, flashing, sources, output level, video files, H.266) works as described in
+**[the original C3CAST README](docs/C3CAST-README.md)**.
+
+## Please read
+
+- **Licensed radio amateurs only.** You are responsible for frequency, power and bandwidth. For on-air operation use suitable RF
+  filtering and check the spectrum, as SP8ESA and HB9IIU recommend.
+- **Mind your receivers' input level.** Receiving your own transmitter at short range can overload a receiver, or damage it on a
+  cable. Use an attenuator on any cable connection, start at a low level, and leave the HackRF's RF amp off near your transmitter.
+  Check each receiver's maximum input level in its own documentation.
+- **Bias-T and antenna power** put voltage on the antenna input. Never use them into a cable, splitter or LNB that already carries
+  voltage. Power a Ham It Down either by USB or by the bias-T, never both (Nooelec's own warning).
+- **Always close C3CAST with the END button.** If it is not closed properly, a receiver's tuner service can keep running and hold
+  the MiniTiouner: it then does not appear, or locks without delivering a stream. END (or Rescan) releases it.
+- One RTL-SDR and one HackRF are supported at a time.
 
 ## Status
 
-Version **1.0.0** is the first stable version. The portable build passed automated
-checks and the user confirmed it working with real receivers. The screenshot above
-shows two MiniTiouners receiving simultaneously. The new download remains in preparation
-while the receiver source/licence audit is completed; the download link above still opens the latest published package.
-The firmware comes from the SP8ESA project, so its limits apply: see his page for compatibility details.
+Tested by PE5JW on 2026-11-23 on his own transmission, 2405.000 MHz, 500 kS/s, DVB-S2 QPSK 3/4, H.265 1600x900, all three receivers
+at once:
 
-### What's new in 1.0.0
+| Receiver | Conversion | Quality | Decoding margin |
+|---|---|---|---|
+| RTL-SDR + Nooelec Ham It Down (bias-T on) | LO 1500 | Es/N0 18.7 dB | +14.7 dB |
+| HackRF One | LO 0 | Es/N0 23.7 dB | +19.7 dB |
+| MiniTiouner Express | LO 0 (direct mode) | MER 10.4 dB | +6.3 dB |
 
-- **DATV reception with RTL-SDR USB sticks!** Up to two integrated receivers, supporting RTL-SDR, MiniTiouner and PicoTuner.
-- **Automatic TX monitoring** - Receiver 1 tunes to your transmitted signal when you go on air.
-- **Stream information and magic eye** - station details, codecs, signal quality and decoding margin.
-- **Enlarged video popup** - enlarge a received picture without interrupting playback.
-- **Single-window protection** - prevents competing browser windows and duplicate app launches.
-- **Improved spectrum display** - automatic beacon scaling, receiver highlights, red TX highlighting and level relative to the beacon.
-- **CPU-load meter** - live system CPU percentage and progress bar.
-- **Simpler TX startup** - defaults to your configured minimum level, with a power reminder before Start.
+All 117 automated tests pass (`.venv-host\Scripts\python.exe -m unittest discover -s tests`, with `tools/ffmpeg` in place),
+including the new `tests/test_profiles.py`.
+Not yet tested on hardware: a PicoTuner with the new assignment, the QO-100 profile with an LNB other than 9750 MHz, and two
+receivers of the same kind. The full history is in the [changelog](docs/CHANGELOG.md).
 
-The full history is in the [changelog](docs/CHANGELOG.md).
+## Credits
 
-## Notes
+C3CAST-plus only adds to the work of others. Thank you:
 
-- **ffmpeg** (H.265, H.266 and AAC) is included in the portable package. When building from source, put one in `tools/ffmpeg/bin/`;
-  it is not part of this repository.
-- **Camera** support uses Windows DirectShow; other systems are not supported yet.
-- **Firmware source** is in `src/` (PlatformIO, ESP-IDF 6.1). To rebuild it: `pio run`, then `python tools/export_firmware.py`
-  to refresh what the Flash button writes.
-- More details in the [changelog](docs/CHANGELOG.md), the [build and test notes](docs/BUILD_AND_TEST_NOTES.md) and [how it works](docs/HOW_IT_WORKS.md).
+- **HB9IIU**: [C3CAST](https://github.com/HB9IIU/C3CAST) itself (the web console, the encoder strategy, the receivers, the SBB
+  clock card, the sound-sync test), adapted from his [QOCAST](https://github.com/HB9IIU) and the QOCAST Player, the **DATVision**
+  demodulator `datvrx` and reader `rtl_iq`, and the Experimental H.266 Player. Almost everything here is his.
+- **Kacper SP8ESA**: the [ESP32-DATV](https://github.com/SP8ESA/ESP32-DATV) firmware, which turns the ESP32-C3's own Wi-Fi radio
+  into a DVB-S2 transmitter. All the clever RF work is his.
+- **Tom ZR6TG and contributors**: [Open Tuner](https://github.com/tomvdb/open_tuner), the tuner code inside the MiniTiouner /
+  PicoTuner service; its STV0910 / STV6120 register code is ported from **longmynd**.
+- **BATC**: the QO-100 wideband spectrum feed, and the MiniTiouner the DATV community builds on.
+- **Great Scott Gadgets**: the HackRF and libhackrf (BSD 3-Clause), linked into `hackrf_iq`.
+- **osmocom rtl-sdr** (librtlsdr, GPL v2+), **libusb** (LGPL 2.1+), **mingw-w64 winpthreads** (MIT), **FFmpeg** (GPL build, with
+  x265, NVENC and native AAC), the **DATV-Easy** picture-size and audio tables used by QOCAST, the Varela Round font (SIL OFL),
+  and the Python packages listed in `webapp/sources/PYTHON-PACKAGES.txt`.
+- The sample films: *Big Buck Bunny* and the *Sintel* trailer, (c) Blender Foundation, CC BY 3.0 (`docs/VIDEO-CREDITS.txt`).
 
-## Credits and licence
+## Licence
 
-- **ESP32-DATV firmware: Kacper SP8ESA** (<https://github.com/SP8ESA/ESP32-DATV>). All the clever part is his work.
-- **HB9IIU Experimental H.266 Player** (folder `H266-Player`): GPL v3, contains code from Open Tuner by ZR6TG and contributors. Its source is in `H266-Player/source` and at <https://github.com/HB9IIU/HB9IIU-Experimental-H266-Player>.
-- **BATC**: the live QO-100 wideband spectrum feed (`eshail.batc.org.uk`), shown read-only. It needs an internet connection.
+Unchanged from C3CAST: **PolyForm Noncommercial 1.0.0** (see [LICENSE](LICENSE) and the firmware's
+[LICENSE.upstream](LICENSE.upstream)). Free for noncommercial use, which the licence explicitly says includes hobby projects and
+amateur pursuits. Anyone you pass a copy to must get the licence text and the *Required Notice* lines at the top of `LICENSE`
+(HB9IIU for C3CAST, SP8ESA for the firmware). No commercial use.
 
-**Licence: PolyForm Noncommercial 1.0.0, the same as the firmware** (see [LICENSE](LICENSE) and the firmware's [LICENSE.upstream](LICENSE.upstream)). Free for noncommercial use, which the licence
-explicitly says includes hobby projects and amateur pursuits. Anyone you pass a copy to must get the licence text and the
-*Required Notice* lines at the top of `LICENSE` (HB9IIU for C3CAST, SP8ESA for the firmware). No commercial use.
+The receiver programs keep their own licences; `webapp/receiver/source/SOURCES.txt` lists each file, its licence and where its
+source is. The new `hackrf_iq.c` is GPL v2 or later; libhackrf, linked into it, is BSD 3-Clause.
 
-Third-party parts keep their own licences: the Varela Round font (SIL OFL, in `webapp/fonts/`), esptool and the other Python
-packages (installed by pip, not in this repository), and **ffmpeg** (a GPL build, shipped in the portable package but not in this repository; its licence text and notices are included there).
-
-73 de HB9IIU
+73 de PE5JW

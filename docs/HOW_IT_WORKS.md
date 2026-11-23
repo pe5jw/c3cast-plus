@@ -86,3 +86,19 @@ The board is the signal source. An eventual QO-100 station also needs the approp
 ---
 
 Based on the local C3CAST 0.2.0 source, firmware and test notes reviewed on 25 October 2026. The radio-generation core comes from SP8ESA's ESP32-DATV; the media-encoding strategy and clock card were adapted from HB9IIU's QOCAST.
+
+## Receiving without the satellite (C3CAST-plus)
+
+C3CAST-plus adds a **2.4 GHz direct** band profile. The receivers then listen on 13 cm themselves instead of on the QO-100
+downlink, so you can watch your own transmission on the bench.
+
+Every receiver needs its input on a frequency it can tune. Whatever sits in front of it (an LNB, a downconverter, or nothing)
+shifts the frequency down by its local oscillator (LO): the receiver tunes **IF = RF - LO + correction**.
+
+```text
+QO-100:   10491.5 MHz downlink --LNB, LO 9750-->  741.5 MHz  --> MiniTiouner, RTL-SDR or HackRF
+2.4 GHz:   2405.0 MHz          --Ham It Down, LO 1500--> 905.0 MHz --> RTL-SDR
+2.4 GHz:   2405.0 MHz          --nothing, LO 0-------->  2405.0 MHz --> MiniTiouner or HackRF
+```
+
+The LO and a small correction for each kind of receiver are set on the Setup page, separately for each profile.
