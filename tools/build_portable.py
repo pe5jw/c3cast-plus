@@ -2,6 +2,7 @@
 
     .venv-host\\Scripts\\python.exe tools\\export_firmware.py      (only if the firmware changed)
     .venv-host\\Scripts\\python.exe tools\\build_portable.py
+    .venv-host\\Scripts\\python.exe tools\\build_portable.py --dev   (local test build: see DEV below)
 
 Needs pyinstaller in the venv. tools/ffmpeg/bin/ffmpeg.exe (GPL build: x265, NVENC, native AAC) is copied into the package. Before
 the package is given to anyone, ffmpeg's matching source and notices must be added (see docs/RELEASE_CHECKLIST.md).
@@ -17,7 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "webapp"))
 import version  # noqa: E402
 
-NAME = f"C3CAST-Portable-x64-{version.__version__}"
+# --dev: a local test build. Only ffmpeg.exe is required; release-only files (ffmpeg licences / source, sample videos,
+# release notes) are skipped when missing, and no zip is made. Never hand a --dev build to anyone.
+DEV = "--dev" in sys.argv[1:]
+NAME = f"C3CAST-Portable-x64-{version.__version__}" + ("-dev" if DEV else "")
 BUILD = ROOT / "build"
 DIST = ROOT / "dist"
 OUT = DIST / NAME
@@ -28,8 +32,20 @@ data = [("webapp/templates", "templates"), ("webapp/static", "static"), ("webapp
         ("host/dvbs2_ldpc.json", "."), ("host/cal.json", ".")]
 hidden = ["runner", "stream_tx", "clock_card", "camera", "qo100_enc", "flasher", "paths", "version",
           "receivers", "tuner_assignment", "webplayer", "tuners", "rx_status", "ts_info", "usb_devices",
-          "window_session", "single_instance", "cpu_load", "tuner_access",
+          "window_session", "single_instance", "cpu_load", "tuner_access", "profiles", "bandplan",
           "tx_dvbs", "tx_media", "dvbs", "dvbs2", "esp_link", "serial.tools.list_ports_windows"]
+
+
+
+def need(path):
+    """True if the file is there. A release build stops on a missing one; a --dev build skips it."""
+    if path.exists():
+        return True
+    if DEV:
+        print(f"--dev: skipped, not present: {path.relative_to(ROOT)}", flush=True)
+        return False
+    sys.exit(f"missing {path}")
+
 
 if not (ROOT / "webapp" / "firmware" / "manifest.json").is_file():
     sys.exit("run tools/export_firmware.py first")
@@ -75,12 +91,16 @@ if not (ff / "bin" / "ffmpeg.exe").is_file():
 shutil.copy2(ff / "bin" / "ffmpeg.exe", OUT / "tools" / "ffmpeg" / "bin" / "ffmpeg.exe")
 # the old notices in tools/ffmpeg/licenses describe the previous (FDK) build; the package gets the notice for this GPL build
 lic = OUT / "tools" / "ffmpeg" / "licenses"
-shutil.copytree(ff / "licenses", lic, ignore=shutil.ignore_patterns("FDK-AAC-NOTICE.txt", "FFmpeg-NOTICE.txt", "BUILD-SUPPLIER-NOTICE.txt"))
+if need(ff / "licenses"):
+    shutil.copytree(ff / "licenses", lic, ignore=shutil.ignore_patterns("FDK-AAC-NOTICE.txt", "FFmpeg-NOTICE.txt", "BUILD-SUPPLIER-NOTICE.txt"))
+lic.mkdir(exist_ok=True)
 shutil.copy2(ROOT / "docs" / "FFMPEG-NOTICE.txt", lic / "FFmpeg-NOTICE.txt")
-shutil.copy2(ff / "buildconf.txt", lic / "buildconf.txt")
+if need(ff / "buildconf.txt"):
+    shutil.copy2(ff / "buildconf.txt", lic / "buildconf.txt")
 shutil.copy2(ROOT / "docs" / "FFMPEG-THIRD-PARTY-LICENSES.txt", lic / "THIRD-PARTY-LICENSES.txt")
 shutil.copy2(ROOT / "docs" / "FFMPEG-NOTICE.txt", OUT / "tools" / "ffmpeg" / "README.txt")
-shutil.copytree(ff / "source", OUT / "tools" / "ffmpeg" / "source")      # the GPL source travels inside the package
+if need(ff / "source"):
+    shutil.copytree(ff / "source", OUT / "tools" / "ffmpeg" / "source")      # the GPL source travels inside the package
 if (ROOT / "tools" / "h266-player").is_dir():                      # the optional H.266 Player: its own folder, its own licences and source
     # never the player's own logs or settings: it writes them next to its exe while it runs (they hold the tuner's serial number)
     shutil.copytree(ROOT / "tools" / "h266-player", OUT / "H266-Player", ignore=shutil.ignore_patterns("*.log", "player2.json"))
@@ -89,13 +109,15 @@ if (ROOT / "tools" / "h266-player").is_dir():                      # the optiona
 shutil.copy2(ROOT / "docs" / "VIDEO-CREDITS.txt", OUT / "videos" / "CREDITS.txt")
 SAMPLE_FILMS = ("Bunny.mp4", "sintel_trailer.mp4")        # only these ship: anything else in webapp/videos is the developer's own test material
 for clip in SAMPLE_FILMS:
-    shutil.copy2(ROOT / "webapp" / "videos" / clip, OUT / "videos" / clip)
+    if need(ROOT / "webapp" / "videos" / clip):
+        shutil.copy2(ROOT / "webapp" / "videos" / clip, OUT / "videos" / clip)
 # Explicit release artwork only: never bundle private test pictures.
 SAMPLE_PICTURES = ("C3CAST_ ESP32-C3 DATV for QO-100.png", "C3SCOPE-closing.png", "C3SCOPE-promo.png", "SP8ESA.png", "real.png", "tescard.png")
 for picture in SAMPLE_PICTURES:
     shutil.copy2(ROOT / "webapp" / "pictures" / picture, OUT / "pictures" / picture)
 for document in ("docs/screenshot.png", f"docs/releases/v{version.__version__}.md", f"docs/releases/v{version.__version__}-validation.md", f"docs/releases/v{version.__version__}-components.json"):
-    shutil.copy2(ROOT / document, OUT / Path(document).name)
+    if need(ROOT / document):
+        shutil.copy2(ROOT / document, OUT / Path(document).name)
 shutil.copy2(ROOT / "LICENSE", OUT / "LICENSE")
 shutil.copy2(ROOT / "LICENSE.upstream", OUT / "LICENSE-firmware-SP8ESA.txt")
 (OUT / "README-PORTABLE.txt").write_text(
@@ -122,6 +144,10 @@ shutil.copy2(ROOT / "LICENSE.upstream", OUT / "LICENSE-firmware-SP8ESA.txt")
     "ffmpeg (in the tools folder) is a GPL build: its licence, notices and where to get its source are in tools/ffmpeg/README.txt.\r\n",
     encoding="utf-8")
 
+if DEV:
+    size = sum(f.stat().st_size for f in OUT.rglob("*") if f.is_file()) / 1e6
+    print(f"\nbuilt {OUT}  ({size:.0f} MB)  -- --dev test build: not for distribution, no zip")
+    sys.exit(0)
 zip_path = shutil.make_archive(str(DIST / NAME), "zip", DIST, NAME)
 checksum = hashlib.sha256(Path(zip_path).read_bytes()).hexdigest()
 (DIST / f"{NAME}.sha256").write_text(f"{checksum}  {Path(zip_path).name}\n", encoding="ascii")
