@@ -1,7 +1,7 @@
 """Audit of a built portable package: every program and library in it must have a licence and, where the licence asks for it, a
 source file that really is inside the package. Writes docs/releases/v<version>-components.json and prints PASS or the list of gaps.
 
-Usage:  python tools/package_inventory.py [path to the package folder]     (default: dist/C3CAST-Portable-x64-<version>)
+Usage:  python tools/package_inventory.py [path to the package folder]     (default: dist/C3CAST-plus-Portable-x64-<version>)
 """
 import fnmatch
 import hashlib
@@ -13,14 +13,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "webapp"))
 import version  # noqa: E402
 
-PKG = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "dist" / f"C3CAST-Portable-x64-{version.__version__}"
+PKG = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "dist" / f"{version.APP_NAME}-Portable-x64-{version.__version__}"
 R, T, H, S = "_internal/receiver", "_internal/receiver/tuner-service", "H266-Player", "_internal/sources"
 FFSRC = "tools/ffmpeg/source"
 
 # (file pattern, what it is, licence, [files inside the package that carry the source], [licence texts inside the package])
 # The first matching rule wins. "source" is empty only where the licence asks for no source.
 RULES = [
-    ("C3CAST.exe", "C3CAST (Python program packed with PyInstaller)", "PolyForm Noncommercial 1.0.0 (C3CAST), packages as listed",
+    (f"{version.APP_NAME}.exe", "C3CAST-plus (Python program packed with PyInstaller)", "PolyForm Noncommercial 1.0.0 (C3CAST), packages as listed",
      [f"{S}/PYTHON-PACKAGES.txt", f"{S}/esptool-5.6.0.tar.gz"], ["LICENSE", f"{S}/Python-PSF-LICENSE.txt"]),
     ("firmware/*.bin", "ESP32-DATV firmware by SP8ESA, as flashed to the board", "PolyForm Noncommercial 1.0.0", [], ["LICENSE-firmware-SP8ESA.txt"]),
     ("tools/ffmpeg/bin/ffmpeg.exe", "ffmpeg with x264, x265, VVenC (transmit and receive)", "GPL v2 or later",
@@ -30,6 +30,9 @@ RULES = [
      ["tools/ffmpeg/licenses/COPYING.GPLv2", "tools/ffmpeg/licenses/x264-COPYING.txt", "tools/ffmpeg/licenses/x265-COPYING.txt",
       "tools/ffmpeg/licenses/VVenC-BSD-3-Clause-Clear.txt", "tools/ffmpeg/licenses/THIRD-PARTY-LICENSES.txt"]),
     (f"{R}/bin/datvrx.exe", "DATVision receiver (Rust)", "GPL v3", [f"{R}/source/DATVision-1.0.0-source.zip"], [f"{R}/licenses/DATVision-GPL.txt"]),
+    (f"{R}/bin/hackrf_iq.exe", "C3CAST-plus HackRF reader (C), libhackrf linked in", "GPL v2 or later; libhackrf BSD 3-Clause",
+     [f"{R}/hackrf-iq/hackrf_iq.c", f"{R}/hackrf-iq/build.sh", f"{R}/source/libhackrf-2026.01.3/hackrf.c"],
+     [f"{R}/licenses/librtlsdr-GPL-2.0.txt", f"{R}/licenses/libhackrf-BSD-3-Clause.txt"]),
     (f"{R}/bin/rtl_iq.exe", "DATVision RTL-SDR reader (C++)", "GPL v3", [f"{R}/source/DATVision-1.0.0-source.zip"], [f"{R}/licenses/DATVision-GPL.txt"]),
     (f"{R}/bin/librtlsdr.dll", "rtl-sdr 2.0.2", "GPL v2 or later", [f"{R}/source/mingw-w64-rtl-sdr-2.0.2-1.src.tar.zst"], [f"{R}/licenses/librtlsdr-GPL-2.0.txt"]),
     (f"{R}/bin/libusb-1.0.dll", "libusb 1.0.28", "LGPL v2.1 or later", [f"{R}/source/mingw-w64-libusb-1.0.28-1.src.tar.zst"], [f"{R}/licenses/libusb-LGPL-2.1.txt"]),
@@ -50,7 +53,7 @@ RULES = [
     (f"{H}/Serilog*.dll", "Serilog", "Apache 2.0", [], [f"{H}/licenses/Apache-2.0.txt"]),
     (f"{H}/System.*.dll", "Microsoft .NET support library", "MIT", [], [f"{H}/FFMPEG-LICENSE.txt"]),
     ("videos/*.mp4", "sample film", "Creative Commons BY 3.0 (Blender Foundation)", [], ["videos/CREDITS.txt"]),
-    ("_internal/*", "Python runtime and packages inside C3CAST.exe", "PSF and the packages' own licences, see PYTHON-PACKAGES.txt",
+    ("_internal/*", f"Python runtime and packages inside {version.APP_NAME}.exe", "PSF and the packages' own licences, see PYTHON-PACKAGES.txt",
      [f"{S}/PYTHON-PACKAGES.txt"], [f"{S}/Python-PSF-LICENSE.txt"]),
 ]
 SUFFIXES = {".exe", ".dll", ".bin", ".mp4", ".pyd"}

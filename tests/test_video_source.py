@@ -44,7 +44,7 @@ class VideoSource(unittest.TestCase):
                     self.assertIn('aac',command)
                     self.assertIn(f"fps={settings['fps']},setpts=N/({settings['fps']}*TB)",command[command.index('-vf')+1])
                     self.assertIn('-fps_mode',command)
-                    base=enc.ffmpeg_command(settings,[], 'TEST','C3CAST @ JN00aa',
+                    base=enc.ffmpeg_command(settings,[], 'TEST',f'{stream_tx.version.APP_NAME} @ JN00aa',
                                             audio_filter='asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0,lowpass=20000')
                     self.assertEqual(command[command.index('-c:a'):],base[base.index('-c:a'):])
 

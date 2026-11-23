@@ -4,8 +4,8 @@ The version lives in `webapp/version.py` (shown on the page, the setup page and 
 Version 1.0.0 is the first stable release. Subsequent features increment the minor
 version; fixes increment the patch version. Versions 0.1 to 0.4 were internal development versions.
 
-## C3CAST-plus (PE5JW, 2026-11-23, based on C3CAST 1.0.1)
-C3CAST-plus is PE5JW's extended version of C3CAST; the app still reports version 1.0.1. See the README for why each change was made.
+## C3CAST-plus 1.0.1-plus.1 (PE5JW, 2026-11-23, based on C3CAST 1.0.1)
+C3CAST-plus is PE5JW's extended version of C3CAST. See the README for why each change was made.
 - **Band profiles** - QO-100 (as before) or 2.4 GHz direct: no BATC spectrum, beacon or slot grid; receive your own signal on 13 cm.
 - **Adjustable LO and correction** - per profile and per kind of receiver (RTL-SDR, MiniTiouner/PicoTuner, HackRF), for other LNBs
   and for downconverters such as the Nooelec Ham It Down (LO 1500). A LO a receiver cannot tune is refused on saving.
@@ -18,6 +18,10 @@ C3CAST-plus is PE5JW's extended version of C3CAST; the app still reports version
 - **A receive row per receiver** in the 2.4 GHz profile: frequency, symbol rate, = TX, Tune Receiver N.
 - **Fixed** - the settings bar of the receiver hid the bias-T and HackRF switches (all its labels were hidden).
 - **Build** - `build_portable.py --dev` for a local test build; a dev folder still in use gives a clear message.
+- **Name** - the app, `C3CAST-plus.exe`, the package folder and the zip are called C3CAST-plus. Receivers show the provider as
+  "C3CAST-plus @ <locator>"; the camera marquee reads "Transmitted with C3CAST-plus (GitHub PE5JW) · C3CAST by HB9IIU · Firmware by SP8ESA".
+- **Release build** - runs the licence / source audit (`package_inventory.py`, which now knows `hackrf_iq.exe`) on the finished
+  folder, puts the components file in the package and makes no zip if the audit finds gaps.
 
 ## 1.0.1 (2026-11-10)
 - **OBS Virtual Camera with a separate audio input** - a camera without its own microphone combined with another audio device

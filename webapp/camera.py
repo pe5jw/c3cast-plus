@@ -15,7 +15,7 @@ import qo100_enc
 import version
 
 FOLDER = paths.DATA / "overlays"
-MARQUEE_TEXT = f"Transmitted with {version.APP_NAME} (GitHub HB9IIU) · Firmware by SP8ESA"
+MARQUEE_TEXT = f"Transmitted with {version.APP_NAME} (GitHub PE5JW) · C3CAST by HB9IIU · Firmware by SP8ESA"
 TIME_TEXT = "%{gmtime:%H\\:%M\\:%S} UTC"       # ffmpeg text expansion; the file holds %{gmtime:%H\:%M\:%S} UTC
 LOCAL_TIME_TEXT = "%{localtime:%H\\:%M\\:%S} LOCAL"
 DEFAULT_LOOK = {"banner": True, "marquee": True, "local_time": False}   # what is drawn on the camera picture (Setup page)

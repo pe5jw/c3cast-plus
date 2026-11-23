@@ -1,4 +1,4 @@
-"""Builds the portable Windows package:  dist/C3CAST-Portable-x64-<version>/  and the same as a .zip.
+"""Builds the portable Windows package:  dist/C3CAST-plus-Portable-x64-<version>/  and the same as a .zip.
 
     .venv-host\\Scripts\\python.exe tools\\export_firmware.py      (only if the firmware changed)
     .venv-host\\Scripts\\python.exe tools\\build_portable.py
@@ -21,7 +21,8 @@ import version  # noqa: E402
 # --dev: a local test build. Only ffmpeg.exe is required; release-only files (ffmpeg licences / source, sample videos,
 # release notes) are skipped when missing, and no zip is made. Never hand a --dev build to anyone.
 DEV = "--dev" in sys.argv[1:]
-NAME = f"C3CAST-Portable-x64-{version.__version__}" + ("-dev" if DEV else "")
+EXE = version.APP_NAME                                         # C3CAST-plus.exe
+NAME = f"{EXE}-Portable-x64-{version.__version__}" + ("-dev" if DEV else "")
 BUILD = ROOT / "build"
 DIST = ROOT / "dist"
 OUT = DIST / NAME
@@ -58,7 +59,7 @@ if OUT.exists():
     try:
         OUT.rename(backup)
     except PermissionError:
-        sys.exit(f"{OUT.name} is in use: close C3CAST.exe started from that folder (END button) and any Explorer window or "
+        sys.exit(f"{OUT.name} is in use: close {EXE}.exe started from that folder (END button) and any Explorer window or "
                  "terminal opened in it, then build again. Nothing was changed.")
     print(f"preserved previous portable folder: {backup}", flush=True)
 if BUILD.resolve().parent != ROOT.resolve():
@@ -70,7 +71,7 @@ shutil.copytree(ROOT / "webapp" / "receiver", receiver_assets,
                 ignore=shutil.ignore_patterns("__pycache__", "obj", "*.log", "*.pdb"))
 data.append((str(receiver_assets), "receiver"))
 
-cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--console", "--name", "C3CAST", "--icon", str(ROOT / "webapp" / "static" / "c3cast.ico"),
+cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--console", "--name", EXE, "--icon", str(ROOT / "webapp" / "static" / "c3cast.ico"),
        "--distpath", str(BUILD / "pyi-dist"), "--workpath", str(BUILD / "pyi-work"), "--specpath", str(BUILD),
        "--paths", str(ROOT / "webapp"), "--paths", str(ROOT / "webapp" / "receiver"),
        "--paths", str(ROOT / "host"), "--collect-all", "esptool"]
@@ -82,7 +83,7 @@ cmd.append(str(ROOT / "webapp" / "c3cast.py"))
 print("running PyInstaller ...", flush=True)
 subprocess.run(cmd, check=True)
 
-shutil.copytree(BUILD / "pyi-dist" / "C3CAST", OUT)
+shutil.copytree(BUILD / "pyi-dist" / EXE, OUT)
 # .NET build leftovers (obj/) hold paths of the build PC and are not needed to run: never ship them
 for leftover in list((OUT / "_internal" / "receiver").rglob("obj")):
     if leftover.is_dir():
@@ -119,21 +120,22 @@ for clip in SAMPLE_FILMS:
 SAMPLE_PICTURES = ("C3CAST_ ESP32-C3 DATV for QO-100.png", "C3SCOPE-closing.png", "C3SCOPE-promo.png", "SP8ESA.png", "real.png", "tescard.png")
 for picture in SAMPLE_PICTURES:
     shutil.copy2(ROOT / "webapp" / "pictures" / picture, OUT / "pictures" / picture)
-for document in ("docs/screenshot.png", f"docs/releases/v{version.__version__}.md", f"docs/releases/v{version.__version__}-validation.md", f"docs/releases/v{version.__version__}-components.json"):
+for document in ("docs/screenshot.png", f"docs/releases/v{version.__version__}.md", f"docs/releases/v{version.__version__}-validation.md"):
     if need(ROOT / document):
         shutil.copy2(ROOT / document, OUT / Path(document).name)
 shutil.copy2(ROOT / "LICENSE", OUT / "LICENSE")
 shutil.copy2(ROOT / "LICENSE.upstream", OUT / "LICENSE-firmware-SP8ESA.txt")
 (OUT / "README-PORTABLE.txt").write_text(
-    f"C3CAST {version.__version__} by HB9IIU: the 5 EUR DATV modulator. Plug, flash, play.\r\n"
+    f"{EXE} {version.__version__}: C3CAST, the 5 EUR DATV modulator by HB9IIU, extended by PE5JW. Plug, flash, play.\r\n"
+    "What C3CAST-plus adds and why: https://github.com/pe5jw/c3cast-plus\r\n"
     "\r\n"
     "Sources and licences of everything in this package: _internal/receiver/source/SOURCES.txt, tools/ffmpeg/README.txt and H266-Player/source.\r\n"
-    "1. Double-click C3CAST.exe. A window opens (close it to quit) and your browser opens the page.\r\n"
+    f"1. Double-click {EXE}.exe. A window opens and your browser opens the page. Quit with the END button on the page.\r\n"
     "2. Plug the Seeed XIAO ESP32-C3 into USB. If the page does not say 'board connected', press Flash.\r\n"
     "3. Pick a picture, clock, USB camera or video, choose frequency, symbol rate and FEC, check the Level, then press Start.\r\n"
     "\r\n"
     "Your own pictures go in the 'pictures' folder (PNG or JPG, 16:9, 1280x720 is ideal).\r\n"
-    "Your settings are saved in config.json next to C3CAST.exe.\r\n"
+    f"Your settings are saved in config.json next to {EXE}.exe.\r\n"
     "A screenshot of the 1.0.0 interface is included as screenshot.png.\r\n"
     "H266-Player is an optional receiver for H.265 and H.266 (its own program and licence): start it with the Player button in the page.\r\n"
     "Delete that folder if you do not need it; the button then disappears.\r\n"
@@ -150,10 +152,16 @@ shutil.copy2(ROOT / "LICENSE.upstream", OUT / "LICENSE-firmware-SP8ESA.txt")
     "ffmpeg (in the tools folder) is a GPL build: its licence, notices and where to get its source are in tools/ffmpeg/README.txt.\r\n",
     encoding="utf-8")
 
-if DEV:
+if DEV:                       # no audit: it would overwrite the release's components file with a test build's
     size = sum(f.stat().st_size for f in OUT.rglob("*") if f.is_file()) / 1e6
     print(f"\nbuilt {OUT}  ({size:.0f} MB)  -- --dev test build: not for distribution, no zip")
     sys.exit(0)
+# The licence / source audit of the finished folder: it writes docs/releases/v<version>-components.json, which travels in the package.
+audit = subprocess.run([sys.executable, str(ROOT / "tools" / "package_inventory.py"), str(OUT)])
+components = ROOT / "docs" / "releases" / f"v{version.__version__}-components.json"
+if audit.returncode or not components.is_file():
+    sys.exit("the licence / source audit found gaps (listed above): no zip made. The folder is left for inspection.")
+shutil.copy2(components, OUT / components.name)
 zip_path = shutil.make_archive(str(DIST / NAME), "zip", DIST, NAME)
 checksum = hashlib.sha256(Path(zip_path).read_bytes()).hexdigest()
 (DIST / f"{NAME}.sha256").write_text(f"{checksum}  {Path(zip_path).name}\n", encoding="ascii")

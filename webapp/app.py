@@ -772,7 +772,7 @@ def api_receiver_start(number):
 
 @app.get("/api/player")
 def api_player():
-    """Is the optional H.266 Player present (folder H266-Player next to C3CAST.exe)? The page shows its button only then."""
+    """Is the optional H.266 Player present (folder H266-Player next to the exe)? The page shows its button only then."""
     return jsonify(available=PLAYER_EXE.is_file())
 
 
@@ -991,21 +991,22 @@ def free_port(first):
 WELCOME = """
   ============================================================
     {name} v{version}   -   the 5 EUR DATV modulator
-    Plug. Flash. Play.                          by HB9IIU
+    Plug. Flash. Play.      C3CAST by HB9IIU, plus by PE5JW
   ============================================================
 
-    Welcome, and thank you for trying C3CAST!
+    Welcome, and thank you for trying C3CAST-plus!
 
     Your browser opens at   {url}
     (if it does not, copy that address into your browser)
 
-    Keep this window open while you use C3CAST;
-    close it to quit.
+    Keep this window open while you use C3CAST-plus,
+    and quit with the END button on the page, so the
+    receivers release their tuners.
 
     Licensed radio amateurs only. Use a filter before any
     amplifier. Firmware: ESP32-DATV by SP8ESA.
 
-    73 de HB9IIU
+    73 de PE5JW & HB9IIU
   ============================================================
 """
 
@@ -1060,7 +1061,7 @@ def _serve(instance):
         receivers.stop()
         server.server_close()
     print(flush=True)
-    print("  73 de HB9IIU", flush=True)
+    print("  73 de PE5JW & HB9IIU", flush=True)
     print(flush=True)
 
 

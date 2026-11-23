@@ -14,7 +14,7 @@
 
   <header class="bar">
     <img class="logo" src="/static/logo.svg" alt="">
-    <h1 class="brand">{{ app_name }}<small>v{{ app_version }} · by HB9IIU</small>{% if 'beta' in app_version %}<span class="beta">BETA</span>{% endif %}</h1>
+    <h1 class="brand">{{ app_name }}<small>v{{ app_version }} · by HB9IIU, plus by PE5JW</small>{% if 'beta' in app_version %}<span class="beta">BETA</span>{% endif %}</h1>
     <span class="grow"></span>
     <span class="utc" id="utc"><b>--:--:--</b> UTC</span>
     <span id="state" class="chip"><i class="led"></i><span id="stateText">idle</span></span>
@@ -94,7 +94,7 @@
       <div class="ph"><svg class="i"><use href="#i-info"/></svg>Your own pictures</div>
       <div class="pb" style="line-height:1.55">
         <p style="margin:0 0 .7rem">Use the <b>&lsaquo;</b> and <b>&rsaquo;</b> arrows on the picture (or the left and right keys) to choose what you transmit.</p>
-        <p style="margin:0 0 .7rem">To add your own, copy PNG or JPG files into the <b>pictures</b> folder next to C3CAST.exe, then press <b>Reload</b>. 16:9 pictures fill the screen best (1280x720 is ideal).</p>
+        <p style="margin:0 0 .7rem">To add your own, copy PNG or JPG files into the <b>pictures</b> folder next to {{ app_name }}.exe, then press <b>Reload</b>. 16:9 pictures fill the screen best (1280x720 is ideal).</p>
         <div class="row" style="justify-content:center"><button id="picInfoClose" class="btn" type="button">Close</button></div>
       </div>
     </div>
@@ -125,7 +125,7 @@
       <form method="dialog"><button class="btn" type="submit">Got it</button></form>
     </div>
   </dialog>
-  <div id="bye" class="modal off d-none"><div><img class="logo" src="/static/logo.svg" alt=""><p>C3CAST has stopped.<br>73 de HB9IIU</p><small>you can close this tab</small></div></div>
+  <div id="bye" class="modal off d-none"><div><img class="logo" src="/static/logo.svg" alt=""><p>{{ app_name }} has stopped.<br>73 de PE5JW &amp; HB9IIU</p><small>you can close this tab</small></div></div>
 
   <div class="dev">
     <span id="conn" class="chip wait"><i class="led"></i><span id="connText">checking</span></span>
@@ -172,7 +172,7 @@
           <select id="video" aria-label="Video file"></select>
           <div id="videoInfo" class="hint"></div>
           <div id="videoWarn" class="warnbox d-none" role="alert"><svg class="i"><use href="#i-warn"/></svg><div id="videoWarnText"></div></div>
-          <div class="hint"><span>Add files to the <b>videos</b> folder next to C3CAST.exe (from source: webapp/videos), then press Reload. The selected video loops until Stop.</span></div>
+          <div class="hint"><span>Add files to the <b>videos</b> folder next to {{ app_name }}.exe (from source: webapp/videos), then press Reload. The selected video loops until Stop.</span></div>
           <div id="videoCredit" class="hint"></div>
         </div>
         <div class="field d-none" id="cameraBox">
@@ -342,7 +342,7 @@
     <pre id="log"></pre>
   </section>
 
-  <footer><span>{{ app_name }} v{{ app_version }} &middot; by HB9IIU</span><span>firmware: SP8ESA ESP32-DATV &middot; PTT on D10</span></footer>
+  <footer><span>{{ app_name }} v{{ app_version }} &middot; C3CAST by HB9IIU, plus by PE5JW</span><span>firmware: SP8ESA ESP32-DATV &middot; PTT on D10</span></footer>
 </div>
 
 <script id="window-config" type="application/json">{{ {'guarded': single_window, 'before': (['signal-finder.js', 'spectrum.js', 'magic-eye.js'] if profile == 'qo100' else ['magic-eye.js']), 'after': ['receivers.js'], 'version': app_version}|tojson }}</script>

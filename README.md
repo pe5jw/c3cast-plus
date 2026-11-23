@@ -9,7 +9,10 @@ way. C3CAST-plus adds what was needed to **receive your own C3CAST signal direct
 with whatever receivers are on the bench.
 
 > C3CAST-plus is not an official HB9IIU release. Please report problems with the features below here, not to HB9IIU or SP8ESA.
-> The page still shows "C3CAST v1.0.1 by HB9IIU": the upstream version it is based on.
+> Version **1.0.1-plus.1** is based on C3CAST 1.0.1.
+
+<h2 align="center"><a href="https://github.com/pe5jw/c3cast-plus/releases/latest">&#11015; Download C3CAST-plus for Windows</a></h2>
+<p align="center">Windows 10/11 &nbsp;·&nbsp; no installation &nbsp;·&nbsp; unzip and double-click <b>C3CAST-plus.exe</b> &nbsp;·&nbsp; quit with <b>END</b></p>
 
 <p align="center">
   <img src="docs/plus/three-receivers.jpg" alt="Three receivers decoding the same C3CAST signal on 2405 MHz: an RTL-SDR with a Nooelec Ham It Down, a HackRF One and a MiniTiouner Express" width="1100">
@@ -119,7 +122,13 @@ C3CAST gave the first two detected tuners to RX1 and RX2, in a fixed order, and 
 
 ## Getting started
 
-There is no C3CAST-plus download yet: build it yourself on Windows 10/11 (Python 3.11).
+Download **C3CAST-plus-Portable-x64-1.0.1-plus.1.zip** from the [Releases page](https://github.com/pe5jw/c3cast-plus/releases/latest),
+unzip it anywhere and double-click **C3CAST-plus.exe**. To keep the settings of an earlier C3CAST, copy its `config.json` next to
+the exe.
+
+### Building it yourself
+
+On Windows 10/11 with Python 3.11:
 
 ```powershell
 git clone https://github.com/pe5jw/c3cast-plus.git
@@ -130,10 +139,15 @@ py -3.11 -m venv .venv-host
 .venv-host\Scripts\python.exe tools\build_portable.py --dev
 ```
 
-Start `dist\C3CAST-Portable-x64-1.0.1-dev\C3CAST.exe`. Or, without building, run it from source:
+Start `dist\C3CAST-plus-Portable-x64-1.0.1-plus.1-dev\C3CAST-plus.exe`. Or, without building, run it from source:
 `.venv-host\Scripts\python.exe webapp\c3cast.py`.
 
-Then, on the **Setup** page:
+A release build (without `--dev`) also needs the ffmpeg licences, source and `buildconf.txt`, and the two sample films in
+`webapp/videos`; it runs the licence / source audit and makes no zip unless that passes.
+
+### First start
+
+On the **Setup** page:
 
 1. Callsign and locator, as in C3CAST.
 2. **Band profile**: QO-100, or 2.4 GHz direct.

@@ -14,7 +14,7 @@
 
   <header class="bar">
     <img class="logo" src="/static/logo.svg" alt="">
-    <h1 class="brand">{{ app_name }} setup<small>v{{ app_version }} · by HB9IIU</small>{% if 'beta' in app_version %}<span class="beta">BETA</span>{% endif %}</h1>
+    <h1 class="brand">{{ app_name }} setup<small>v{{ app_version }} · by HB9IIU, plus by PE5JW</small>{% if 'beta' in app_version %}<span class="beta">BETA</span>{% endif %}</h1>
     <span class="grow"></span>
     <a href="/" class="btn"><svg class="i"><use href="#i-back"/></svg>Transmitter</a>
   </header>
@@ -127,7 +127,7 @@
     </div>
   </section>
 
-  <footer><span>{{ app_name }} v{{ app_version }} &middot; by HB9IIU</span><span>firmware: SP8ESA ESP32-DATV</span></footer>
+  <footer><span>{{ app_name }} v{{ app_version }} &middot; C3CAST by HB9IIU, plus by PE5JW</span><span>firmware: SP8ESA ESP32-DATV</span></footer>
 </div>
 
 <script id="window-config" type="application/json">{{ {'guarded': single_window, 'before': [], 'after': [], 'version': app_version}|tojson }}</script>
