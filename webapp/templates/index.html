@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ app_name }}</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/c3cast.css?v={{ app_version }}">
+</head>
+<body class="window-pending">
+{% include "_icons.html" %}
+<div id="toast" class="toast d-none" role="status"></div>
+<div class="wrap">
+
+  <header class="bar">
+    <img class="logo" src="/static/logo.svg" alt="">
+    <h1 class="brand">{{ app_name }}<small>v{{ app_version }} · by HB9IIU</small>{% if 'beta' in app_version %}<span class="beta">BETA</span>{% endif %}</h1>
+    <span class="grow"></span>
+    <span class="utc" id="utc"><b>--:--:--</b> UTC</span>
+    <span id="state" class="chip"><i class="led"></i><span id="stateText">idle</span></span>
+    <button id="playerBtn" class="btn d-none" type="button" title="Open the H.266 Player: receive and watch DATV"><svg class="i"><use href="#i-monitor"/></svg>Player</button>
+    <a href="/setup" class="btn" title="Setup"><svg class="i"><use href="#i-sliders"/></svg>Setup</a>
+    <button id="quitBtn" class="btn danger" title="Stop any transmission and close C3CAST"><svg class="i"><use href="#i-power"/></svg>END</button>
+  </header>
+  <div id="limitsDlg" class="modal d-none">
+    <div class="panel box" style="width:min(92vw,34rem);text-align:left">
+      <div class="ph"><svg class="i"><use href="#i-sliders"/></svg>Output level limits</div>
+      <div class="pb">
+        <p style="margin:0 0 .9rem">Drag the left handle for your <b>lowest</b> level and the right handle for your <b>highest</b>. The Level slider on the main page then runs between them.</p>
+        <div class="dual">
+          <div class="dual-track" id="dualTrack"></div>
+          <div class="dual-fill" id="dualFill"></div>
+          <input type="range" id="limLo" min="1" max="480" step="1" aria-label="Lowest level">
+          <input type="range" id="limHi" min="1" max="480" step="1" aria-label="Highest level">
+        </div>
+        <div class="row" style="justify-content:space-between;margin:.2rem 0 .9rem">
+          <span>Lowest <b id="limLoVal" style="color:var(--amber)"></b></span>
+          <span>Highest <b id="limHiVal" style="color:var(--amber)"></b></span>
+        </div>
+        <div class="limzones">
+          <div><i class="zone bad"></i> Below about 15 a spike appears in the middle of the signal. For less power use an attenuator.</div>
+          <div><i class="zone warn"></i> Above about 250 the signal is distorted.</div>
+        </div>
+        <div id="limError" class="note bad-text" style="margin-top:.6rem"></div>
+        <div class="row" style="justify-content:center;margin-top:1rem">
+          <button id="limSave" class="btn save-primary" type="button" style="width:auto;padding:.6rem 1.6rem">Save limits</button>
+          <button id="limCancel" class="btn" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="askVvc" class="modal d-none">
+    <div class="panel box" style="width:min(92vw,30rem);text-align:left">
+      <div class="ph"><svg class="i"><use href="#i-warn"/></svg>Transmit in H.266?</div>
+      <div class="pb">
+        <div class="warnbox" role="alert"><svg class="i"><use href="#i-warn"/></svg><div><b>Most DATV viewers cannot decode H.266.</b> They will see no picture. Use this mode only for tests with stations that have agreed to take part.</div></div>
+        <div class="row" style="justify-content:center;margin-top:1rem">
+          <button id="vvcGo" class="btn danger" type="button">Transmit in H.266</button>
+          <button id="vvcCancel" class="btn" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="askQuit" class="modal d-none">
+    <div class="panel box">
+      <div class="ph"><svg class="i"><use href="#i-power"/></svg>End C3CAST</div>
+      <div class="pb">
+        <p>Stops any transmission and closes C3CAST.</p>
+        <div class="row" style="justify-content:center">
+          <button id="quitYes" class="btn danger" type="button"><svg class="i"><use href="#i-power"/></svg>END</button>
+          <button id="quitNo" class="btn" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="infoVideo" class="modal d-none">
+    <div class="panel box" style="width:min(94vw,44rem);text-align:left">
+      <div class="ph"><svg class="i"><use href="#i-info"/></svg>Preparing a video</div>
+      <div class="pb" style="line-height:1.55">
+        <p style="margin:0 0 .6rem"><b>Almost any video works.</b> C3CAST fits the picture to the size your symbol rate and FEC allow, adds black bars if it is not 16:9, and loops it until Stop. What can go wrong is your PC decoding a very large file <b>live</b>.</p>
+        <p style="margin:0 0 .6rem"><b>Best:</b> MP4 with H.264 or H.265 and AAC sound, 16:9, <b>1280&times;720</b> or smaller, 25 or 30 frames per second (24 is ideal for the H.266 test mode). Any length is fine.</p>
+        <p style="margin:0 0 .6rem"><b>To prepare a file,</b> open a command window in the C3CAST folder and run this, with your own file names. It uses the ffmpeg that comes with C3CAST:</p>
+        <pre id="videoCmd" style="margin:0 0 .6rem;padding:.6rem .8rem;background:var(--bg);border:1px solid var(--line-hi);border-radius:.3rem;white-space:pre-wrap;word-break:break-all">tools\ffmpeg\bin\ffmpeg.exe -i input.mp4 -vf scale=-2:720,fps=30 -c:v libx265 -crf 24 -c:a aac -b:a 128k videos\output.mp4</pre>
+        <p style="margin:0 0 .9rem;color:var(--dim)">The new file lands in the <b>videos</b> folder. Press <b>Reload</b>, and it is in the list.</p>
+        <div class="row" style="justify-content:center">
+          <button id="videoCopy" class="btn" type="button">Copy the command</button>
+          <button id="videoClose" class="btn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="infoPictures" class="modal d-none">
+    <div class="panel box" style="width:min(92vw,30rem);text-align:left">
+      <div class="ph"><svg class="i"><use href="#i-info"/></svg>Your own pictures</div>
+      <div class="pb" style="line-height:1.55">
+        <p style="margin:0 0 .7rem">Use the <b>&lsaquo;</b> and <b>&rsaquo;</b> arrows on the picture (or the left and right keys) to choose what you transmit.</p>
+        <p style="margin:0 0 .7rem">To add your own, copy PNG or JPG files into the <b>pictures</b> folder next to C3CAST.exe, then press <b>Reload</b>. 16:9 pictures fill the screen best (1280x720 is ideal).</p>
+        <div class="row" style="justify-content:center"><button id="picInfoClose" class="btn" type="button">Close</button></div>
+      </div>
+    </div>
+  </div>
+  <div id="infoDelay" class="modal d-none">
+    <div class="panel box" style="width:min(92vw,34rem);text-align:left">
+      <div class="ph"><svg class="i"><use href="#i-info"/></svg>Audio delay<span class="grow"></span><small style="color:var(--amber)">experimental</small></div>
+      <div class="pb" style="line-height:1.55">
+        <p style="margin:0 0 .7rem"><b>The problem.</b> A USB camera often delivers its picture a little later than its microphone delivers the sound, so lips and voice drift apart.</p>
+        <p style="margin:0 0 .7rem"><b>The test.</b> Clap your hands 6 to 8 times in front of the camera, not in a steady rhythm. C3CAST records 12 seconds, finds every clap in the picture (your hands meeting) and in the sound, and measures how far apart they are.</p>
+        <p style="margin:0 0 .7rem"><b>The result.</b> A suggested delay in milliseconds: plus delays the sound, minus delays the picture. Press <b>Apply</b>, then fine-tune with&nbsp;+&nbsp;and&nbsp;&minus;. For a good result use good light, a quiet room and the microphone you will transmit with, and watch the level bar: it must move when you clap.</p>
+        <p style="margin:0 0 1rem;color:var(--dim)">The suggestion can be off by about 100 ms. Always check the lip-sync on a receiver and adjust.</p>
+        <div class="row" style="justify-content:center"><button id="infoClose" class="btn" type="button">Close</button></div>
+      </div>
+    </div>
+  </div>
+  <dialog id="infoVvc" class="vvc-dialog" aria-labelledby="vvcTitle">
+    <div class="vvc-titlebar"><img src="{{ url_for('static', filename='vvc-logo.jpg') }}" alt="VVC — Versatile Video Coding" width="300" height="86"></div>
+    <div class="ph" id="vvcTitle"><svg class="i"><use href="#i-info"/></svg>H.266, in plain language</div>
+    <div class="pb">
+      <div class="warnbox" role="alert"><svg class="i"><use href="#i-warn"/></svg><div><b>Most DATV viewers cannot decode H.266.</b> They will see no picture. Use this mode only for tests with stations that have agreed to take part, and switch back to H.265 for normal operation.</div></div>
+      <p><b>A different way to pack the picture.</b> H.266 (also called VVC) is a newer video compression format. It aims to fit more picture detail into the same radio bandwidth. Better pictures are possible, but are not guaranteed.</p>
+      <p><b>Your PC does more work.</b> This experimental mode uses the CPU, even if you have an NVIDIA GPU. The picture can take several seconds to start. At larger picture sizes your PC may struggle to keep up.</p>
+      <p><b>The receiver must understand H.266.</b> VLC 3 and QOCAST's normal Player cannot display it. Use the <b>HB9IIU Experimental H.266 Player</b>: press <b>Player</b> at the top of this page (it lives in the <b>H266-Player</b> folder next to C3CAST.exe), or a recent ffplay with VVC decoding (FFmpeg 7.1 or newer). Check your receiver before trying it on air.</p>
+      <p><b>The radio and sound stay the same.</b> Only video compression changes. Your frequency, symbol rate, FEC and AAC sound settings stay as selected. This mode has been tested only briefly on air by HB9IIU; more testing by other users is welcome.</p>
+      <p><b>Video-file test profile.</b> Movies use 640×360 at 24 fps, with video bitrate capped at 300 kb/s, to keep CPU work manageable. Camera, clock and picture profiles remain separate and can need a faster PC.</p>
+      <p>Leave the switch off for normal H.265 operation. It resets to off when this page opens.</p>
+      <form method="dialog"><button class="btn" type="submit">Got it</button></form>
+    </div>
+  </dialog>
+  <div id="bye" class="modal off d-none"><div><img class="logo" src="/static/logo.svg" alt=""><p>C3CAST has stopped.<br>73 de HB9IIU</p><small>you can close this tab</small></div></div>
+
+  <div class="dev">
+    <span id="conn" class="chip wait"><i class="led"></i><span id="connText">checking</span></span>
+    <span id="connInfo" class="info"></span>
+    <span class="grow"></span>
+    <button id="flashBtn" class="btn" title="Flash the firmware to a board"><svg class="i"><use href="#i-chip"/></svg>Flash</button>
+    <button id="recheck" class="btn" title="Check the board again"><svg class="i"><use href="#i-refresh"/></svg>Check</button>
+  </div>
+
+  <section id="flashPanel" class="panel d-none" style="margin-bottom:.6rem">
+    <div class="ph"><svg class="i"><use href="#i-chip"/></svg>Flash firmware<span class="grow"></span><span id="flashFw" style="letter-spacing:.04em;text-transform:none;font-weight:400"></span></div>
+    <div class="pb">
+      <div class="row">
+        <select id="flashPort" style="flex:1;min-width:14rem;width:auto"></select>
+        <button id="flashGo" class="btn danger" type="button"><svg class="i"><use href="#i-chip"/></svg><span id="flashGoText">Flash</span></button>
+        <button id="flashClose" class="btn" type="button">Close</button>
+      </div>
+      <div id="flashNote" class="hint"><svg class="i"><use href="#i-info"/></svg>erases the whole board, then writes the firmware (also works on a blank board)</div>
+      <div class="progress"><i id="flashBar"></i></div>
+      <pre id="flashLog" class="logbox d-none"></pre>
+    </div>
+  </section>
+
+  <div class="grid overview-grid">
+
+    <section class="panel">
+      <div class="ph"><svg class="i"><use href="#i-image"/></svg>Source</div>
+      <div class="pb">
+        <div class="field">
+          <div class="seg source-seg">
+            <input type="radio" name="source" id="srcPicture" value="picture">
+            <label for="srcPicture"><svg class="i"><use href="#i-image"/></svg>Picture</label>
+            <input type="radio" name="source" id="srcClock" value="clock" checked>
+            <label for="srcClock"><svg class="i"><use href="#i-clock"/></svg>SBB clock</label>
+            <input type="radio" name="source" id="srcCamera" value="camera">
+            <label for="srcCamera"><svg class="i"><use href="#i-camera"/></svg>USB camera</label>
+            <input type="radio" name="source" id="srcVideo" value="video">
+            <label for="srcVideo"><svg class="i"><use href="#i-play"/></svg>Video</label>
+          </div>
+        </div>
+        <select id="picture" class="d-none" aria-hidden="true"></select>      <!-- holds the chosen picture; the arrows below pick it -->
+        <div class="field d-none" id="videoBox">
+          <div class="lab"><label for="video">Video file</label><button id="videoHelp" class="btn" type="button" title="How to prepare a video" aria-label="How to prepare a video"><svg class="i"><use href="#i-info"/></svg></button></div>
+          <select id="video" aria-label="Video file"></select>
+          <div id="videoInfo" class="hint"></div>
+          <div id="videoWarn" class="warnbox d-none" role="alert"><svg class="i"><use href="#i-warn"/></svg><div id="videoWarnText"></div></div>
+          <div class="hint"><span>Add files to the <b>videos</b> folder next to C3CAST.exe (from source: webapp/videos), then press Reload. The selected video loops until Stop.</span></div>
+          <div id="videoCredit" class="hint"></div>
+        </div>
+        <div class="field d-none" id="cameraBox">
+          <select id="camera"></select>
+          <select id="audio" style="margin-top:.5rem" title="Sound source"></select>
+          <div id="levelBar" class="d-none" style="height:.5rem;margin:.4rem 0;background:var(--line);border-radius:.25rem;overflow:hidden" title="Microphone level"><i id="levelFill" style="display:block;height:100%;width:0;background:var(--ok);transition:width .1s"></i></div>
+          <div id="delayRow" class="row" style="margin-top:.5rem;gap:.5rem 1rem">
+            <span style="color:var(--dim)">Audio delay</span>
+            <span class="row" style="gap:.3rem" title="Sound delay: plus delays the sound, minus delays the picture">
+              <button id="delayDec" class="btn" type="button">&minus;</button>
+              <b id="delayVal" style="min-width:5.2rem;text-align:center;font-family:var(--mono)">0 ms</b>
+              <button id="delayInc" class="btn" type="button">+</button>
+            </span>
+            <span class="row" style="gap:.3rem">
+              <button id="detectBtn" class="btn" type="button" title="Clap in front of the camera and C3CAST suggests a delay (experimental)">Detect audio delay</button>
+              <button id="detectInfo" class="btn" type="button" title="What is this?" aria-label="What is this?"><svg class="i"><use href="#i-info"/></svg></button>
+            </span>
+          </div>
+          <div id="detectMsg" class="hint d-none"></div>
+          <div id="cameraInfo" class="hint"></div>
+        </div>
+        <div class="screen">
+          <img id="preview" alt="">
+          <video id="videoPreview" class="d-none" controls muted loop playsinline preload="metadata" aria-label="Video preview"></video>
+          <button type="button" class="carousel-arrow prev d-none" id="picPrev" aria-label="Previous picture">&lsaquo;</button>
+          <button type="button" class="carousel-arrow next d-none" id="picNext" aria-label="Next picture">&rsaquo;</button>
+          <div id="screenWait" class="wait d-none"><svg class="i"><use href="#i-camera"/></svg><span id="waitText"></span></div>
+          <span class="tag" id="screenTag">PREVIEW</span>
+          <div id="onair" class="onair d-none"><i class="led"></i>ON AIR</div>
+        </div>
+        <div id="previewMsg" class="msg"></div>
+        <div class="row" style="margin-top:.6rem">
+          <span id="pictureHelp" class="row" style="gap:.5rem">
+            <span id="pictureLabel" class="hint" style="margin:0"></span>
+            <button id="pictureInfoBtn" class="btn" type="button" title="How do I add my own pictures?" aria-label="How do I add my own pictures?"><svg class="i"><use href="#i-info"/></svg></button>
+          </span>
+          <span id="clockHelp" class="hint d-none" style="margin:0"><svg class="i"><use href="#i-info"/></svg>callsign, locator, lead time: <a href="/setup">setup</a></span>
+          <span class="grow"></span>
+          <button id="reload" class="btn"><svg class="i"><use href="#i-refresh"/></svg>Reload</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel spectrum-panel">
+      <div class="ph"><svg class="i"><use href="#i-wave"/></svg>Link<span class="grow"></span>
+        <span style="letter-spacing:.06em;text-transform:none;font-weight:400"><span id="hdrFreq">{{ freq }}</span> MHz &middot; DVB-S2 QPSK</span></div>
+      <div class="pb">
+        <div class="field spectrum-field">
+          <div class="lab">QO-100 wideband<span id="specChip" class="chip"><i class="led"></i><span id="specChipText">connecting</span></span></div>
+          <div class="spectrum-plot"><canvas id="spectrum" class="spectrum"></canvas></div>
+            <div class="hint" style="margin-top:.4rem">Click a signal to tune <b id="rxTargetLabel">Receiver 1</b> · green slots below select TX</div>
+            <div id="rxSpectrumMessage" class="hint" role="status" aria-live="polite"></div>
+        </div>
+        <div class="field">
+          <div class="lab"><label for="freq">Frequency</label><span>MHz uplink</span></div>
+          <div class="freqrow"><input id="freq" class="inp" inputmode="decimal" autocomplete="off" spellcheck="false" value="{{ freq }}"><span id="freqDn" class="dn">DN -</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel tx-panel">
+    <div class="ph"><svg class="i"><use href="#i-wave"/></svg>Transmit<span class="grow"></span><span class="tx-format">DVB-S2 QPSK</span></div>
+    <div class="pb tx-body">
+        <div class="field srfec tx-radio">
+          <div>
+            <div class="lab">Symbol rate<span>kS/s</span></div>
+            <div class="seg">
+              {% for r in rates %}
+              <input type="radio" name="sr" id="sr{{ r }}" value="{{ r }}" {{ 'checked' if r == 500000 }}>
+              <label for="sr{{ r }}">{{ r // 1000 }}</label>
+              {% endfor %}
+            </div>
+          </div>
+          <div>
+            <div class="lab">FEC</div>
+            <div class="seg fit">
+              {% for f in fecs %}
+              <input type="radio" name="fec" id="fec{{ loop.index }}" value="{{ f }}" {{ 'checked' if f == '3/4' }}>
+              <label for="fec{{ loop.index }}">{{ f }}</label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="field tx-level">
+          <div class="lab"><span>Level <button id="limitsBtn" class="btn" type="button" title="Set your lowest and highest level">Limits</button></span><b id="levelVal"></b></div>
+          <input type="range" id="level" min="{{ lmin }}" max="{{ lmax }}" value="{{ ldef }}" autocomplete="off">
+        </div>
+        <div class="field tx-codec">
+          <div class="row">
+            <label class="vvc-switch"><input id="vvc" type="checkbox" autocomplete="off"> H.266 / VVC <small>experimental</small></label>
+            <button id="vvcInfo" class="btn" type="button" aria-label="Explain H.266" title="H.266 in plain language"><svg class="i"><use href="#i-info"/></svg></button>
+            <img class="vvc-option-logo" src="{{ url_for('static', filename='vvc-logo.jpg') }}" alt="VVC" width="300" height="86">
+          </div>
+          <div id="vvcNote" class="hint d-none">CPU encoding · slower startup</div>
+        </div>
+        <dl class="kv field tx-summary">
+          <div><dt>Channel</dt><dd id="pCap">-</dd></div>
+          <div><dt>Stream</dt><dd id="pMux">-</dd></div>
+          <div><dt>Codec</dt><dd id="pCodec">-</dd></div>
+          <div><dt>Picture</dt><dd id="pSize">-</dd></div>
+          <div><dt>Video</dt><dd id="pVideo">-</dd></div>
+          <div><dt>Audio</dt><dd id="pAudio">-</dd></div>
+        </dl>
+        <div class="tx-action">
+          <p id="powerReminder" class="tx-power-warning"><svg class="i" aria-hidden="true"><use href="#i-warn"/></svg>{% if setup_ready %}Set power before Start{% else %}<span>Set your callsign and locator on the <a href="/setup">Setup page</a> before you can transmit</span>{% endif %}</p>
+          <button id="toggle" class="go" type="button" aria-describedby="powerReminder"><svg class="i"><use id="toggleUse" href="#i-play"/></svg><span id="toggleText">Start</span></button>
+        </div>
+      </div>
+    </section>
+
+  <div class="rx-restore d-none"><button id="showRx2" class="btn" type="button">Show RX2</button></div>
+  <div id="receivers" class="grid rx-grid" aria-label="DATV receivers">
+    {% for n in (1, 2) %}
+    <section class="panel rx-panel" data-receiver="{{ n }}">
+      <div class="ph"><button class="rx-pill" type="button" aria-pressed="{{ 'true' if n == 1 else 'false' }}">Receiver {{ n }}</button><span class="rx-device grow">No receiver connected</span>
+        <div class="rx-audio muted">
+          <input class="rx-volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Receiver {{ n }} volume" disabled>
+          <button class="rx-mute" type="button" aria-label="Unmute receiver {{ n }}" aria-pressed="true" disabled><svg class="i" aria-hidden="true"><use href="#i-sound-off"/></svg></button>
+        </div>
+        <button class="btn rx-retry d-none" type="button">Retry</button>
+        <button class="btn rx-settings" type="button" title="Receiver settings">Settings</button>
+        {% if n == 2 %}<button class="btn rx-hide d-none" type="button" title="Hide unused receiver for this page">Hide</button>{% endif %}
+        <button class="btn rx-popup-close d-none" type="button" aria-label="Close enlarged receiver">Close &times;</button>
+        <button class="btn rx-full" type="button" title="Fullscreen receiver">⛶</button>
+      </div>
+      <div class="rx-picture"><div class="rx-placeholder"><div class="rx-empty"><strong>No receiver connected</strong><p>C3CAST automatically detects MiniTiouner, PicoTuner and RTL-SDR USB receivers.</p><p>Connect your receiver, then restart C3CAST to refresh detection.</p></div></div></div>
+      <div class="pb rx-details">
+        <div class="rx-stream">
+          <div class="row rx-station"><b data-rx-field="station">No stream</b><span class="grow"></span><span class="rx-lock">Idle</span></div>
+          <div class="rx-info-line"><span data-rx-field="tuning" aria-label="Downlink and symbol rate">—</span><span data-rx-field="mode" aria-label="Modulation and FEC">—</span></div>
+          <div class="rx-info-line"><span data-rx-field="video" aria-label="Video format">—</span><span data-rx-field="audio" aria-label="Audio codec">—</span></div>
+          <div class="rx-info-line"><span data-rx-field="quality" aria-label="Signal quality">—</span><span class="rx-margin" aria-label="Decoding margin">Margin —</span></div>
+        </div>
+        <div class="rx-eye"><div class="rx-eye-display"></div></div>
+      </div>
+      <div class="hint rx-message" role="status" aria-live="polite"></div>
+    </section>
+    {% endfor %}
+  </div>
+
+  <section class="panel" style="margin-top:.6rem">
+    <div class="ph"><svg class="i"><use href="#i-term"/></svg>Telemetry</div>
+    <dl class="tele">
+      <div><dt>Elapsed</dt><dd id="elapsed">00:00:00</dd></div>
+      <div><dt>ESP buffer</dt><dd id="buffer">-</dd></div>
+      <div><dt>TS packets</dt><dd id="packets">-</dd></div>
+      <div class="cpu-tele" title="Total system CPU usage across all processors, including C3CAST and the browser"><dt>CPU load</dt><dd><span id="cpuValue">—</span><span id="cpuMeter" class="cpu-meter" role="progressbar" aria-label="Total system CPU load" aria-valuemin="0" aria-valuemax="100"><span id="cpuFill"></span></span></dd></div>
+    </dl>
+    <div id="error" class="err d-none"></div>
+    <pre id="log"></pre>
+  </section>
+
+  <footer><span>{{ app_name }} v{{ app_version }} &middot; by HB9IIU</span><span>firmware: SP8ESA ESP32-DATV &middot; PTT on D10</span></footer>
+</div>
+
+<script id="window-config" type="application/json">{{ {'guarded': single_window, 'before': ['signal-finder.js', 'spectrum.js', 'magic-eye.js'], 'after': ['receivers.js'], 'version': app_version}|tojson }}</script>
+<script id="console-code" type="text/plain">
+const $ = id => document.getElementById(id);
+const val = name => document.querySelector(`input[name=${name}]:checked`).value;
+const CHIP = {idle: ['', 'idle'], starting: ['warn', 'starting'], transmitting: ['air', 'on air'], stopping: ['warn', 'stopping'], error: ['bad', 'error']};
+let busy = false, board = false, flashing = false, freqOk = true;
+const selectedCodec = () => $('vvc').checked ? 'h266' : 'h265';
+$('level').value = {{ level_min }}; // Start at the configured minimum, never a previous high setting.
+$('vvc').checked = false;
+$('vvcInfo').onclick = () => $('infoVvc').showModal();
+$('vvc').onchange = () => {
+  $('vvcNote').classList.toggle('d-none', !$('vvc').checked);
+  updatePlan();
+};
+let band = {offset_mhz: 8089.5, allowed: {}, min: 2300, max: 2450};
+
+const chip = (id, cls, text) => { $(id).className = 'chip ' + cls; $(id + 'Text').textContent = text; };
+const hms = s => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(n => String(n).padStart(2, '0')).join(':');
+const tick = () => { $('utc').innerHTML = '<b>' + new Date().toISOString().slice(11, 19) + '</b> UTC'; };
+
+$('quitBtn').onclick = () => $('askQuit').classList.remove('d-none');
+$('quitNo').onclick = () => $('askQuit').classList.add('d-none');
+$('quitYes').onclick = async () => {
+  $('askQuit').classList.add('d-none');
+  await post('/api/quit');
+  $('bye').classList.remove('d-none');
+  window.close();
+};
+
+async function post(url, body) {
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
+  return {ok: r.ok, data: await r.json().catch(() => ({}))};
+}
+
+async function checkBoard() {
+  chip('conn', 'wait', 'checking'); $('connInfo').textContent = '';
+  const c = await (await fetch('/api/connection')).json();
+  board = c.connected;
+  const many = !c.connected && c.candidates.length > 1;
+  chip('conn', c.connected ? 'ok' : many ? 'warn' : 'bad', c.connected ? 'board connected' : many ? 'choose a board' : 'board not found');
+  $('connInfo').textContent = c.connected ? `${c.port} · ${c.how}`
+    : many ? 'several boards answer:'
+    : c.saved_missing ? `Saved board ${c.saved.port} (${c.saved.serial}) is not connected. Plug it in, then Check.` +
+        (c.tried.length ? ` Other Espressif port(s) ${c.tried.join(', ')} did not answer as ESP32DATV.` : '')
+    : c.tried.length ? `Board found (${c.tried.join(', ')}), but it is not running the C3CAST firmware yet. Click Flash to install it (a new board needs this once).`
+    : 'No Espressif USB device found. Is the board plugged in?';
+  $('flashBtn').classList.toggle('hot', !c.connected && !many && !c.saved_missing && c.tried.length > 0);
+  if (many) c.candidates.forEach(a => {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.style.marginLeft = '.6rem';
+    b.textContent = `${a.port} (${a.serial})`;
+    b.onclick = async () => { await post('/api/connection/choose', {port: a.port}); checkBoard(); };
+    $('connInfo').appendChild(b);
+  });
+  updateButtons();
+}
+
+async function loadPictures() {
+  const names = await (await fetch('/api/pictures')).json();
+  const keep = $('picture').value;
+  $('picture').innerHTML = names.map(n => `<option>${n}</option>`).join('');
+  if (names.includes(keep)) $('picture').value = keep;
+  showPreview();
+  updateButtons();
+}
+
+const isClock = () => val('source') === 'clock';
+const isCamera = () => val('source') === 'camera';
+const isVideo = () => val('source') === 'video';
+async function loadVideos() {
+  const names = await (await fetch('/api/videos')).json();
+  const pick = $('video'), keep = pick.value;
+  pick.replaceChildren(...names.map(name => new Option(name, name)));
+  if (!names.length) pick.add(new Option('No videos yet', ''));
+  if (names.includes(keep)) pick.value = keep;
+  if (isVideo()) showPreview();
+  updateButtons();
+}
+$('video').onchange = showPreview;
+
+// What is in the chosen video, in plain words, with a warning when it is too heavy to decode live.
+const videoInfoCache = {};
+async function showVideoInfo() {
+  const name = $('video').value;
+  $('videoInfo').textContent = ''; $('videoWarn').classList.add('d-none');
+  if (!name) return;
+  if (!(name in videoInfoCache)) {
+    const r = await fetch('/api/video-info?name=' + encodeURIComponent(name));
+    videoInfoCache[name] = r.ok ? await r.json() : {summary: (await r.json().catch(() => ({}))).error || 'cannot read this file', heavy: '', notes: []};
+  }
+  if ($('video').value !== name) return;                                   // the user chose another file meanwhile
+  const info = videoInfoCache[name];
+  $('videoInfo').textContent = info.summary + (info.notes.length ? ' \u00b7 ' + info.notes.join(' ') : '');
+  if (info.heavy) { $('videoWarnText').textContent = info.heavy; $('videoWarn').classList.remove('d-none'); }
+}
+$('videoHelp').onclick = () => $('infoVideo').classList.remove('d-none');
+$('videoClose').onclick = () => $('infoVideo').classList.add('d-none');
+$('infoVideo').onclick = e => { if (e.target === $('infoVideo')) $('infoVideo').classList.add('d-none'); };
+$('videoCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('videoCmd').textContent); $('videoCopy').textContent = 'Copied'; }
+  catch (e) { $('videoCopy').textContent = 'Select the text and copy it'; }
+  setTimeout(() => { $('videoCopy').textContent = 'Copy the command'; }, 2000);
+};
+$('videoPreview').onerror = () => {
+  if (isVideo() && $('video').value) $('previewMsg').textContent = 'Browser preview unavailable for this format. FFmpeg can still transmit a supported video file.';
+};
+let clockTimer = null, cameras = [], previewKey = '', camerasLoaded = false;
+let detecting = false;                      // Detect audio delay is running: the camera is not for the preview then
+
+// The camera picture takes a moment to arrive (or never does): a placeholder instead of the browser's broken-image icon.
+function cameraWait(state, text) {         // 'loading' | 'failed' | 'ok' | 'off'; text replaces the default message
+  $('screenWait').classList.toggle('d-none', state === 'ok' || state === 'off');
+  $('screenWait').classList.toggle('failed', state === 'failed');
+  $('waitText').textContent = state === 'loading' ? 'Starting the camera ...'
+    : state === 'failed' ? text || 'No picture from this camera. Is another program using it? Close it, then press Reload.' : '';
+  $('preview').style.visibility = state === 'loading' || state === 'failed' ? 'hidden' : '';
+}
+
+function setPreview(url) {                  // '' stops the camera stream (the server then frees the camera)
+  if (url === previewKey) return;
+  previewKey = url;
+  if (url) { if (isCamera()) cameraWait('loading'); $('preview').src = url; } else $('preview').removeAttribute('src');
+}
+
+function syncCameraPreview() {
+  if (!isCamera() || detecting) return;          // Detect audio delay owns the camera: no preview meanwhile
+  $('onair').classList.toggle('d-none', !busy);
+  $('screenTag').classList.add('d-none');          // the camera picture already carries the overlay
+  $('preview').classList.toggle('d-none', busy);
+  if (busy) cameraWait('off');
+  else if (camerasLoaded && !$('camera').value) cameraWait('failed', 'No camera found. Plug it in, then press Reload.');
+  setPreview(!busy && $('camera').value ? '/api/camera-preview?camera=' + encodeURIComponent($('camera').value) : '');
+}
+$('preview').onerror = () => { if (isCamera() && previewKey) cameraWait('failed'); };
+$('preview').onload = () => { if (isCamera()) cameraWait('ok'); };
+
+async function loadCameras() {
+  cameras = await (await fetch('/api/cameras')).json();
+  camerasLoaded = true;
+  const keep = $('camera').value;
+  $('camera').innerHTML = cameras.map(c => `<option>${c.name}</option>`).join('');
+  if (cameras.some(c => c.name === keep)) $('camera').value = keep;
+  await loadAudio();
+  showCameraInfo();
+  updateButtons();
+  previewKey = '';                          // reload list = restart the preview
+  syncCameraPreview();
+}
+
+let audioDelay = 0;
+const setDelay = v => { audioDelay = Math.max(-500, Math.min(500, v)); $('delayVal').textContent = (audioDelay > 0 ? '+' : '') + audioDelay + ' ms'; };
+async function loadDelay() {               // every camera + sound source keeps its own delay (saved at Start)
+  const r = await (await fetch('/api/audio-delay?camera=' + encodeURIComponent($('camera').value) + '&audio=' + encodeURIComponent($('audio').value))).json();
+  setDelay(r.delay);
+}
+let delayTimer = null;
+function changeDelay(v) {                  // by hand (+ / - / Apply): remembered at once for this camera + sound source
+  setDelay(v);
+  clearTimeout(delayTimer);
+  const camera = $('camera').value, audio = $('audio').value, delay = audioDelay;
+  delayTimer = setTimeout(async () => {
+    await post('/api/audio-delay', {camera, audio, delay});
+  }, 400);
+}
+$('delayDec').onclick = () => changeDelay(audioDelay - 10);
+$('delayInc').onclick = () => changeDelay(audioDelay + 10);
+
+$('detectInfo').onclick = () => $('infoDelay').classList.remove('d-none');
+$('infoClose').onclick = () => $('infoDelay').classList.add('d-none');
+$('infoDelay').onclick = e => { if (e.target === $('infoDelay')) $('infoDelay').classList.add('d-none'); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+$('detectBtn').onclick = async () => {
+  if (detecting) return;                   // the status poll re-enables the button; a second run would be refused anyway
+  detecting = true;
+  const msg = $('detectMsg'), btn = $('detectBtn'), bar = $('levelBar'), fill = $('levelFill');
+  msg.classList.remove('d-none');
+  btn.disabled = true;
+  setPreview('');                           // the camera is needed for the recording
+  cameraWait('loading');
+  msg.textContent = 'Starting the camera ...';
+  const finish = text => { detecting = false; btn.disabled = false; bar.classList.add('d-none'); previewKey = ''; syncCameraPreview(); if (text) msg.textContent = text; };
+  const r = await post('/api/audio/detect', {camera: $('camera').value, audio: $('audio').value, sr: +val('sr'), fec: val('fec'), codec: selectedCodec()});
+  if (!r.ok) return finish(r.data.error || 'measurement failed');
+  bar.classList.remove('d-none');
+  let s = {state: 'starting'};
+  try {
+    while (s.state === 'starting' || s.state === 'recording' || s.state === 'analysing') {
+      await sleep(120);
+      s = await (await fetch('/api/audio/detect/status')).json();
+      fill.style.width = Math.round(s.level * 100) + '%';
+      fill.style.background = s.level > 0.92 ? 'var(--bad)' : 'var(--ok)';
+      if (s.state === 'recording') $('preview').src = '/api/audio/detect/frame?t=' + Date.now();
+      msg.textContent = s.state === 'starting' ? 'Starting the camera ...'
+        : s.state === 'recording' ? 'Clap your hands 6 to 8 times, not in a steady rhythm: ' + s.left + ' s' : 'Measuring ...';
+    }
+  } catch (e) { return finish('Lost the connection to C3CAST.'); }
+  if (s.state === 'error') return finish(s.error || 'measurement failed');
+  finish();
+  if (!s.result.clear) { msg.textContent = 'No clear claps. Clap louder and keep your hands in view, then try again.'; return; }
+  const d = s.result.delay;
+  msg.innerHTML = '';
+  msg.append('Suggested delay: ' + (d > 0 ? '+' : '') + d + ' ms (' + (d > 0 ? 'sound arrives before the picture' : d < 0 ? 'sound arrives after the picture' : 'in sync') + '). ');
+  const apply = document.createElement('button');
+  apply.className = 'btn'; apply.type = 'button'; apply.textContent = 'Apply';
+  apply.onclick = () => { changeDelay(Math.max(-500, Math.min(500, d))); msg.textContent = 'Applied. Fine-tune with the + and - buttons and check on a receiver.'; };
+  msg.append(apply);
+};
+
+async function loadAudio() {
+  const a = await (await fetch('/api/audio')).json();
+  const c = cameras.find(c => c.name === $('camera').value);
+  const pick = $('audio');
+  pick.innerHTML = `<option value="auto">Auto: ${c && c.mic ? c.mic : 'camera microphone'}</option><option value="none">No audio (silence)</option>` +
+    a.devices.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+  pick.value = [...pick.options].some(o => o.value === a.audio) ? a.audio : 'auto';
+  await loadDelay();
+  updateButtons();
+  dimDelay();
+}
+
+function showCameraInfo() {
+  const c = cameras.find(c => c.name === $('camera').value);
+  $('cameraInfo').textContent = !cameras.length ? 'No camera found. Plug it in and reload.'
+    : $('audio').value === 'auto' && !c.mic ? 'no microphone found: the stream carries silence' : '';
+  updatePlan();
+}
+
+function showPreview() {
+  clearInterval(clockTimer);
+  $('videoPreview').pause();
+  $('videoPreview').removeAttribute('src');
+  $('videoPreview').load();
+  $('videoPreview').classList.toggle('d-none', !isVideo());
+  $('videoBox').classList.toggle('d-none', !isVideo());
+  previewKey = '';
+  $('preview').removeAttribute('src');      // closes a running camera stream
+  $('previewMsg').textContent = '';
+  if (!isCamera()) cameraWait('off');
+  $('onair').classList.add('d-none');
+  $('screenTag').classList.toggle('d-none', isCamera());
+  $('preview').classList.toggle('d-none', isVideo());
+  $('cameraBox').classList.toggle('d-none', !isCamera());
+  $('reload').classList.toggle('d-none', isClock());
+  $('pictureHelp').classList.toggle('d-none', val('source') !== 'picture');
+  $('clockHelp').classList.toggle('d-none', !isClock());
+  if (isVideo()) {
+    const name = $('video').value;
+    const credit = {'Bunny.mp4': ['Big Buck Bunny excerpt — © 2008 Blender Foundation', 'https://peach.blender.org/about/'],
+                    'sintel_trailer.mp4': ['Sintel trailer — © Blender Foundation', 'https://durian.blender.org/sharing/']}[name];
+    $('videoCredit').replaceChildren();
+    if (credit) {
+      const link = document.createElement('a');
+      link.href = credit[1]; link.target = '_blank'; link.rel = 'noopener noreferrer';
+      link.textContent = credit[0];
+      $('videoCredit').append(link, ' · CC BY 3.0');
+    }
+    if (name) { $('videoPreview').src = '/videos/' + encodeURIComponent(name); showVideoInfo(); }
+    else $('previewMsg').textContent = 'No videos yet. Add a video to the videos folder, then press Reload.';
+  } else if (isClock()) {
+    const refresh = () => { $('preview').src = '/api/clock-preview.png?' + Date.now(); };   // drawn by the server: also while on air
+    refresh(); clockTimer = setInterval(refresh, 2000);
+  } else if (isCamera()) {
+    camerasLoaded = false;
+    cameraWait('loading');                  // listing the cameras takes a second or two: no empty box, no broken icon
+    loadCameras();
+  } else {
+    const n = $('picture').value;
+    $('preview').src = n ? '/pictures/' + encodeURIComponent(n) : '';
+    const o = $('picture').options;
+    $('pictureLabel').textContent = n ? (o.length > 1 ? ($('picture').selectedIndex + 1) + ' / ' + o.length + ' · ' : '') + n : 'no pictures: see the i button';
+  }
+  const carousel = val('source') === 'picture' && $('picture').options.length > 1;
+  $('picPrev').classList.toggle('d-none', !carousel);
+  $('picNext').classList.toggle('d-none', !carousel);
+  updatePlan(); updateButtons();
+}
+
+async function updatePlan() {
+  $('levelVal').textContent = $('level').value;
+  updateButtons();
+  const codec = selectedCodec();
+  $('vvcNote').textContent = isVideo() ? 'Movie test profile: 640×360 · 24 fps · video up to 300 kb/s'
+    : 'CPU encoding · slower startup';
+  const p = await (await fetch(`/api/plan?sr=${val('sr')}&fec=${encodeURIComponent(val('fec'))}&source=${val('source')}&codec=${codec}`)).json();
+  if (codec !== selectedCodec()) return;
+  $('pCap').textContent = `${p.capacity_kbps} kb/s`;
+  $('pMux').textContent = `${p.mux_kbps} kb/s`;
+  $('pCodec').textContent = `${p.codec} · ${p.encoder}`;
+  $('pSize').textContent = `${p.size} · ${p.fps}`;
+  $('pVideo').textContent = `${p.video_kbps} kb/s`;
+  $('pAudio').textContent = `${p.audio} ${p.audio_kbps}k ${p.channels === 1 ? 'mono' : 'stereo'}`;
+  $('pAudio').title = 'sound: ' + (isClock() ? 'clock tones' : isCamera() ? 'camera microphone' : isVideo() ? 'video soundtrack, or silence when absent' : 'test melody');
+}
+
+let lastState = 'idle';
+let monitoredTransmission = null;
+const setupReady = {{ 'true' if setup_ready else 'false' }};
+function updateButtons(state) {
+  const wasBusy = busy;
+  if (state !== undefined) lastState = state;
+  busy = lastState === 'starting' || lastState === 'transmitting' || lastState === 'stopping';
+  if (wasBusy && !busy) resetLevel();
+  const noSource = isClock() ? false : isCamera() ? !$('camera').value : isVideo() ? !$('video').value : !$('picture').value;
+  const toggle = $('toggle');             // one button: Start when idle, Stop while starting or on air
+  if (busy) {
+    $('toggleText').textContent = lastState === 'stopping' ? 'Stopping...' : 'Stop';
+    $('toggleUse').setAttribute('href', '#i-stop');
+    toggle.className = 'go stop';
+    toggle.disabled = lastState === 'stopping';
+  } else {
+    $('toggleText').textContent = 'Start';
+    $('toggleUse').setAttribute('href', '#i-play');
+    toggle.className = 'go';
+    toggle.disabled = noSource || !board || flashing || !freqOk || !setupReady || +$('level').value === 0;
+  }
+  $('recheck').disabled = busy || flashing;
+  $('flashBtn').disabled = busy || flashing;
+  const silent = $('audio').value === 'none';           // no sound: nothing to delay or detect
+  document.querySelectorAll('input[name=sr], input[name=fec], input[name=source], #level, #limitsBtn, #picture, #picPrev, #picNext, #camera, #audio, #delayDec, #delayInc, #detectBtn, #reload, #freq, #vvc').forEach(e => e.disabled = busy || (silent && ['delayDec', 'delayInc', 'detectBtn'].includes(e.id)));
+  window.QO_LOCKED = busy || flashing;
+  $('video').disabled = busy;
+  if (isVideo() && busy) $('videoPreview').pause();
+}
+
+function resetLevel() {
+  $('level').value = levelMin;
+  $('levelVal').textContent = String(levelMin);
+}
+
+async function poll() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    const txSignal = s.state === 'transmitting' && s.settings ? {
+      centerMhz: Number(s.settings.freq) + band.offset_mhz, sr: Number(s.settings.sr) / 1000
+    } : null;
+    window.batcSetTransmit?.(txSignal);
+    if (!txSignal) monitoredTransmission = null;
+    else {
+      const key = JSON.stringify(txSignal);
+      if (key !== monitoredTransmission && window.c3MonitorTransmit?.(txSignal)) monitoredTransmission = key;
+    }
+    flashing = s.flashing;
+    const [cls, text] = s.flashing ? ['warn', 'flashing'] : (CHIP[s.state] || ['', s.state]);
+    chip('state', cls, text);
+    $('elapsed').textContent = hms(s.elapsed);
+    $('buffer').textContent = s.buffer || '-';
+    $('packets').textContent = s.packets || '-';
+    const cpu = Number.isFinite(s.cpu_percent) ? Math.max(0, Math.min(100, s.cpu_percent)) : null;
+    $('cpuValue').textContent = cpu === null ? '—' : `${cpu}%`;
+    $('cpuFill').style.width = `${cpu ?? 0}%`;
+    $('cpuMeter').classList.toggle('high', cpu !== null && cpu >= 85);
+    $('cpuMeter').classList.toggle('medium', cpu !== null && cpu >= 65 && cpu < 85);
+    if (cpu === null) {
+      $('cpuMeter').removeAttribute('aria-valuenow');
+      $('cpuMeter').setAttribute('aria-valuetext', 'CPU load unavailable');
+    } else {
+      $('cpuMeter').setAttribute('aria-valuenow', String(cpu));
+      $('cpuMeter').setAttribute('aria-valuetext', `${cpu}%`);
+    }
+    const log = $('log'), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+    log.textContent = s.log.join('\n');
+    if (atEnd) log.scrollTop = log.scrollHeight;
+    $('error').classList.toggle('d-none', !s.error);
+    $('error').textContent = s.error;
+    updateButtons(s.state);
+    syncCameraPreview();
+  } catch (e) { chip('state', 'bad', 'server offline'); }
+}
+
+const startStop = async () => {
+  $('toggle').disabled = true;              // no double clicks; the next status poll sets the button again
+  if (busy) {
+    const r = await post('/api/stop');
+    if (r.ok) resetLevel();
+    poll(); return;
+  }
+  if (isCamera()) setPreview('');           // free the camera before the transmission opens it
+  const r = await post('/api/start', {source: val('source'), codec: selectedCodec(), picture: $('picture').value, video: $('video').value, camera: $('camera').value, audio: $('audio').value, delay: audioDelay,
+                                       sr: +val('sr'), fec: val('fec'), level: +$('level').value, freq: $('freq').value});
+  if (!r.ok) { $('error').classList.remove('d-none'); $('error').textContent = r.data.error || 'start failed'; }
+  poll();
+};
+$('toggle').onclick = () => {
+  if (!busy && selectedCodec() === 'h266') { $('askVvc').classList.remove('d-none'); return; }   // H.266: ask first
+  startStop();
+};
+$('vvcGo').onclick = () => { $('askVvc').classList.add('d-none'); startStop(); };
+$('vvcCancel').onclick = () => $('askVvc').classList.add('d-none');
+$('askVvc').onclick = e => { if (e.target === $('askVvc')) $('askVvc').classList.add('d-none'); };
+$('reload').onclick = () => isCamera() ? loadCameras() : isVideo() ? loadVideos() : loadPictures();
+$('camera').onchange = () => { loadAudio().then(showCameraInfo); };
+function dimDelay() { $('delayRow').style.opacity = $('audio').value === 'none' ? '.45' : ''; }
+$('audio').onchange = () => { showCameraInfo(); loadDelay(); updateButtons(); dimDelay(); };
+$('recheck').onclick = checkBoard;
+const stepPicture = d => {
+  const o = $('picture').options;
+  if (busy || val('source') !== 'picture' || o.length < 2) return;
+  $('picture').selectedIndex = ($('picture').selectedIndex + d + o.length) % o.length;
+  showPreview();
+};
+$('picPrev').onclick = () => stepPicture(-1);
+$('picNext').onclick = () => stepPicture(1);
+document.addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input, select, textarea, button')) return;
+  if (e.key === 'ArrowLeft') stepPicture(-1); else if (e.key === 'ArrowRight') stepPicture(1);
+});
+$('pictureInfoBtn').onclick = () => $('infoPictures').classList.remove('d-none');
+$('picInfoClose').onclick = () => $('infoPictures').classList.add('d-none');
+$('infoPictures').onclick = e => { if (e.target === $('infoPictures')) $('infoPictures').classList.add('d-none'); };
+// The level starts at the configured minimum; Start/Stop controls transmission.
+let levelMin = {{ level_min }}, levelMax = {{ lmax }};
+$('level').oninput = () => {
+  $('level').value = Math.max(levelMin, Math.min(levelMax, +$('level').value));
+  updatePlan();
+};
+
+// ---- output level limits: one track, two handles (lowest and highest)
+const LIM_MIN = 1, LIM_MAX = 480;
+const limPct = v => (v - LIM_MIN) / (LIM_MAX - LIM_MIN) * 100;
+function limDraw() {
+  const lo = +$('limLo').value, hi = +$('limHi').value;
+  $('limLoVal').textContent = lo; $('limHiVal').textContent = hi;
+  $('dualFill').style.left = limPct(lo) + '%';
+  $('dualFill').style.width = (limPct(hi) - limPct(lo)) + '%';
+  $('limLo').style.zIndex = lo > LIM_MAX * 0.9 ? 5 : 3;                 // when both handles sit at the top end, the lowest one stays reachable
+  $('dualTrack').style.background = 'linear-gradient(to right, rgba(239,83,80,.55) 0 ' + limPct(15) + '%, var(--line-hi) ' + limPct(15) + '% ' + limPct(250) +
+    '%, rgba(240,165,44,.45) ' + limPct(250) + '% 100%)';
+}
+function limMove(e) {                                                      // the handles cannot cross
+  const lo = $('limLo'), hi = $('limHi');
+  if (e.target === lo && +lo.value > +hi.value) lo.value = hi.value;
+  if (e.target === hi && +hi.value < +lo.value) hi.value = lo.value;
+  limDraw();
+}
+$('limLo').oninput = limMove;
+$('limHi').oninput = limMove;
+$('limitsBtn').onclick = () => {
+  $('limLo').value = levelMin; $('limHi').value = levelMax; $('limError').textContent = '';
+  limDraw();
+  $('limitsDlg').classList.remove('d-none');
+};
+$('limCancel').onclick = () => $('limitsDlg').classList.add('d-none');
+$('limitsDlg').onclick = e => { if (e.target === $('limitsDlg')) $('limitsDlg').classList.add('d-none'); };
+$('limSave').onclick = async () => {
+  const r = await post('/api/level-limits', {level_min: +$('limLo').value, level_max: +$('limHi').value});
+  if (!r.ok) { $('limError').textContent = r.data.error || 'could not save'; return; }
+  levelMin = r.data.level_min; levelMax = r.data.level_max;
+  $('level').max = levelMax;
+  $('level').min = levelMin;
+  resetLevel(); updatePlan();
+  $('limitsDlg').classList.add('d-none');
+  toast('Output level limits saved: ' + levelMin + ' to ' + levelMax, 'ok');
+  setTimeout(() => $('toast').classList.add('d-none'), 2500);
+};
+document.querySelectorAll('input[name=sr], input[name=fec]').forEach(e => e.onchange = updatePlan);
+document.querySelectorAll('input[name=sr]').forEach(e => e.addEventListener('change', freqChanged));
+document.querySelectorAll('input[name=source]').forEach(e => e.onchange = () => isVideo() ? loadVideos() : showPreview());
+
+// ---- flash firmware: pick a port, confirm twice, watch esptool
+let flashArm = 0, flashPoll = null;
+const flashSet = (text) => { $('flashGoText').textContent = text; };
+
+async function loadFlashPorts() {
+  const d = await (await fetch('/api/flash/ports')).json();
+  $('flashPort').innerHTML = d.ports.map(p => `<option value="${p.port}">${p.port} · ${p.serial || 'no serial'}${p.saved ? ' · saved board' : ''}</option>`).join('');
+  const saved = d.ports.find(p => p.saved);
+  if (saved) $('flashPort').value = saved.port;
+  $('flashFw').textContent = d.firmware.text;
+  $('flashFw').style.color = d.firmware.ok ? '' : 'var(--bad)';
+  $('flashGo').disabled = !d.ports.length || !d.firmware.ok;
+  if (!d.ports.length) $('flashNote').lastChild.textContent = 'no Espressif USB device found: plug the board in';
+}
+
+function flashReset() { flashArm = 0; flashSet('Flash'); $('flashPort').disabled = false; }
+
+async function flashShow() {
+  const s = await (await fetch('/api/flash/status')).json();
+  const bar = $('flashBar'), prog = bar.parentElement;
+  if (s.port && !$('flashPort').options.length) $('flashPort').innerHTML = `<option>${s.port}</option>`;   // page reloaded mid-flash
+  bar.style.width = s.percent + '%';
+  prog.className = 'progress' + (s.state === 'done' ? ' ok' : s.state === 'error' ? ' bad' : '');
+  $('flashLog').classList.toggle('d-none', !s.log.length);
+  $('flashLog').textContent = s.log.join('\n');
+  $('flashLog').scrollTop = $('flashLog').scrollHeight;
+  if (s.state === 'flashing') { flashSet('Flashing ' + s.percent + '%'); return; }
+  clearInterval(flashPoll); flashPoll = null;
+  flashReset();
+  $('flashNote').lastChild.textContent = s.state === 'done' ? s.result : s.error;
+  $('flashNote').style.color = s.state === 'done' ? 'var(--ok)' : 'var(--bad)';
+  $('flashGo').disabled = false;
+  if (s.state === 'done') {
+    toast('Firmware flashed', 'ok', s.result.replace(/^flashed:\s*/, ''));
+    setTimeout(() => location.reload(), 2500);          // fresh page: board check, ports, everything
+  } else {
+    toast('Flashing failed', 'bad', s.error);
+  }
+}
+
+fetch('/api/player').then(r => r.json()).then(p => { if (p.available) $('playerBtn').classList.remove('d-none'); }).catch(() => {});
+$('playerBtn').onclick = async () => {
+  const r = await post('/api/player/open');
+  if (r.ok) {
+    toast(r.data.already ? 'The player is already open' : 'H.266 Player started', 'ok');
+    setTimeout(() => $('toast').classList.add('d-none'), 2500);      // this notice goes away by itself
+  } else {
+    toast('Cannot start the player', 'bad', r.data.error);
+  }
+};
+
+function toast(text, kind, detail) {
+  const t = $('toast');
+  t.className = 'toast ' + kind;
+  t.innerHTML = '<svg class="i"><use href="#i-' + (kind === 'ok' ? 'chip' : 'info') + '"/></svg><div></div>';
+  t.lastChild.textContent = text;
+  if (detail) { const d = document.createElement('small'); d.textContent = detail; t.lastChild.appendChild(d); }
+  if (kind === 'bad') setTimeout(() => t.classList.add('d-none'), 8000);
+}
+
+function flashWatch() {
+  $('flashPanel').classList.remove('d-none');
+  $('flashGo').disabled = true; $('flashPort').disabled = true;
+  clearInterval(flashPoll); flashPoll = setInterval(flashShow, 600); flashShow();
+}
+
+$('flashBtn').onclick = () => {
+  const open = $('flashPanel').classList.toggle('d-none') === false;
+  if (open) { $('flashNote').lastChild.textContent = 'erases the whole board, then writes the firmware (also works on a blank board)'; $('flashNote').style.color = ''; flashReset(); loadFlashPorts(); }
+};
+$('flashClose').onclick = () => { if (!flashPoll) $('flashPanel').classList.add('d-none'); };
+$('flashGo').onclick = async () => {
+  const port = $('flashPort').value;
+  if (!flashArm) {                          // first click arms, second click (within 6 s) flashes
+    flashArm = Date.now(); flashSet('Confirm: erase + flash ' + port);
+    setTimeout(() => { if (flashArm && !flashPoll) flashReset(); }, 6000);
+    return;
+  }
+  const r = await post('/api/flash/start', {port});
+  if (!r.ok) { $('flashNote').lastChild.textContent = r.data.error || 'could not start'; $('flashNote').style.color = 'var(--bad)'; flashReset(); return; }
+  $('flashNote').style.color = '';
+  flashArm = 0;
+  flashWatch();
+};
+fetch('/api/flash/status').then(r => r.json()).then(s => { if (s.state === 'flashing') flashWatch(); });   // page reloaded while flashing
+
+tick(); setInterval(tick, 1000);
+// ---- frequency: type it, or click a free slot on the QO-100 spectrum (the downlink slot minus 8089.5 MHz is the uplink)
+const freqMHz = () => parseFloat($('freq').value.replace(',', '.'));
+const slotFor = (up) => ((band.allowed['125000'] || []).find(s => Math.abs(s - (up + band.offset_mhz)) < 0.0006));
+
+function freqChanged() {
+  const f = freqMHz(), sr = +val('sr'), half = sr * 1.35 / 2e6;
+  freqOk = Number.isFinite(f) && f >= band.min + half && f <= band.max - half;
+  $('hdrFreq').textContent = Number.isFinite(f) ? f.toFixed(3) : '-';
+  $('freqDn').textContent = Number.isFinite(f) ? 'DN ' + (f + band.offset_mhz).toFixed(3) : 'DN -';
+  window.QO_ALLOWED_MHZ = band.allowed[String(sr)] || [];
+  window.QO_WIDE = sr === 1000000;
+  window.QO_SR_KS = sr / 1000;
+  if (window.batcSetSelected) window.batcSetSelected(freqOk ? f + band.offset_mhz : null);
+  updateHint();
+  updateButtons();
+}
+
+function updateHint() {
+  const f = freqMHz(), sr = +val('sr'), half = sr * 1.35 / 2e6, box = $('freq');
+  const say = (text, color) => { box.title = text; box.classList.toggle('bad', color === 'var(--bad)'); };   // tooltip + red value
+  if (!freqOk) return say(`${(band.min + half).toFixed(3)} to ${(band.max - half).toFixed(3)} MHz at this symbol rate`, 'var(--bad)');
+  const slot = slotFor(f);
+  if (slot === undefined) return say('not on the QO-100 slot grid (fine for a bench test)');
+  const label = 'slot ' + slot.toFixed(2) + ' DN';
+  if (!(band.allowed[String(sr)] || []).some(s => Math.abs(s - slot) < 0.0006)) return say(label + ' · not allowed at ' + sr / 1000 + ' kS/s', 'var(--amber)');
+  const wide = sr === 1000000 ? [slot - 0.5, slot, slot + 0.5] : [slot];
+  const states = wide.map(s => window.batcSlotState ? window.batcSlotState(s) : null);
+  if (states.some(s => s === true)) return say(label + ' · signal seen', 'var(--bad)');
+  if (states.every(s => s === false)) return say(label + ' · looks free (listen first)', 'var(--ok)');
+  say(label + ' · status unknown (spectrum offline)');
+}
+
+async function loadBandplan() {
+  try { band = await (await fetch('/api/bandplan')).json(); } catch (e) { /* defaults stay */ }
+  freqChanged();
+}
+window.onBatcSlotSelected = (center) => { $('freq').value = (center - band.offset_mhz).toFixed(3); freqChanged(); };
+$('freq').addEventListener('input', freqChanged);
+$('freq').addEventListener('change', () => { if (Number.isFinite(freqMHz())) $('freq').value = freqMHz().toFixed(3); freqChanged(); });
+setInterval(updateHint, 1500);
+
+loadBandplan(); checkBoard(); loadPictures(); loadVideos(); updatePlan(); poll(); setInterval(poll, 1000);
+
+</script>
+<script src="/static/window-session.js?v={{ app_version }}"></script>
+</body>
+</html>

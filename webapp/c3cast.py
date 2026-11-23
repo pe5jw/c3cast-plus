@@ -1,0 +1,35 @@
+"""C3CAST.exe entry point: the web app, or one of its helper processes (C3CAST.exe --worker NAME ...)."""
+import sys
+
+
+def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--worker":
+        name, rest = sys.argv[2], sys.argv[3:]
+        for stream in (sys.stdout, sys.stderr):     # from source the helpers run as "python -u"; here the pipe must not buffer
+            stream.reconfigure(line_buffering=True)
+        if name == "runner":                    # upstream tx_dvbs.py with a clean stop (the transmitter)
+            import runner
+            runner.main(rest)
+        elif name == "stream_tx":               # clock / picture / camera -> ffmpeg -> runner
+            import stream_tx
+            sys.exit(stream_tx.main(rest))
+        elif name == "esptool":                 # the flasher
+            sys.argv = ["esptool"] + rest
+            import esptool
+            esptool._main()
+        elif name == "receiver":
+            import paths
+            sys.path.insert(0, str(paths.RECEIVER))
+            import webplayer
+            webplayer.ROOT = paths.RECEIVER
+            sys.argv = ["receiver"] + rest
+            sys.exit(webplayer.main())
+        else:
+            sys.exit(f"unknown worker: {name}")
+        return
+    import app
+    app.serve()
+
+
+if __name__ == "__main__":
+    main()
