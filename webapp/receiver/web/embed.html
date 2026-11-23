@@ -6,6 +6,10 @@ html,body{margin:0;height:100%;background:#000;color:#e1e9ee;font:13px system-ui
 #top{position:absolute;top:42px;left:0;right:0;z-index:2;display:flex;align-items:center;gap:6px;padding:4px 8px;background:rgba(10,20,28,.82);color:#91a7ba;flex-wrap:wrap;transition:opacity .2s}
 #top label{display:none}
 #gainBox label{display:inline}
+#top #biasBox{display:flex}
+#top #biasBox[hidden]{display:none}
+#hackrfBox label{display:inline-flex;align-items:center;gap:3px}
+#biasBox input,#hackrfBox input{margin:0;cursor:pointer}
 #top{display:none}
 #top.open{display:flex}
 #top select{background:#15232e;color:#e1e9ee;border:1px solid #2b4558;border-radius:8px;padding:3px 8px;font:inherit;cursor:pointer}

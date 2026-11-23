@@ -81,13 +81,14 @@ class Api(ApiBase):
         page = self.client.get('/').get_data(as_text=True)
         self.assertNotIn('spectrum.js', page)
         self.assertNotIn('id="spectrum"', page)
-        self.assertIn('class="btn rx-tune-to"', page)
+        self.assertIn('class="btn rx-tune"', page)
         self.assertIn('id="rxTargetLabel"', page)       # receivers.js writes to it
+        self.assertEqual(page.count('class="freqrow rx-row"'), 2)   # one receive row per receiver
 
     def test_index_qo100_keeps_spectrum(self):
         page = self.client.get('/').get_data(as_text=True)
         self.assertIn('spectrum.js', page)
-        self.assertNotIn('class="btn rx-tune-to"', page)
+        self.assertNotIn('class="btn rx-tune"', page)
 
     def test_save_profile_restarts_receivers(self):
         with patch.object(receivers, 'restart') as restart:

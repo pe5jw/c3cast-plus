@@ -55,7 +55,11 @@ if OUT.exists():
     backup = DIST / f"{NAME}-backup-{time.strftime('%Y%m%d-%H%M%S')}"
     if OUT.resolve().parent != DIST.resolve() or backup.resolve().parent != DIST.resolve() or backup.exists():
         sys.exit("refusing an unexpected or occupied portable backup path")
-    OUT.rename(backup)
+    try:
+        OUT.rename(backup)
+    except PermissionError:
+        sys.exit(f"{OUT.name} is in use: close C3CAST.exe started from that folder (END button) and any Explorer window or "
+                 "terminal opened in it, then build again. Nothing was changed.")
     print(f"preserved previous portable folder: {backup}", flush=True)
 if BUILD.resolve().parent != ROOT.resolve():
     sys.exit(f"refusing to remove unexpected build path: {BUILD}")
